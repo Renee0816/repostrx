@@ -1,0 +1,11 @@
+# Secrets
+.env
+
+# Dependencies
+node_modules/
+
+# Netlify local build/dev files
+.netlify/
+
+# Personal Claude Code settings (local permissions)
+.claude/settings.local.json
