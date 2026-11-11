@@ -116,6 +116,56 @@
 
 
 
+\## 2026-11-11: 401 from Claude, caused by Netlify AI Gateway (biggest challenge)
+
+\- What I saw: drafts returned 401 "Claude didn't accept the API key." netlify dev listed only BLOTATO\_API\_KEY as injected.
+
+\- Ruled out (without printing the key): wrong .env location, empty value, wrong length or whitespace, a duplicate Windows variable, a terminal-level variable.
+
+\- Breakthrough: a temporary debug log showed the function's key was 453 chars, not my 106.
+
+\- Cause: Netlify's AI Gateway auto-injects its own ANTHROPIC\_API\_KEY and ANTHROPIC\_BASE\_URL, overriding .env. My code sent Netlify's token to api.anthropic.com, so it was rejected.
+
+\- Fix: renamed my key to REPOSTRX\_ANTHROPIC\_KEY so the platform can't override it.
+
+\- Lesson: when a value "can't be wrong," make the code report what it actually receives.
+
+\- Deploy note: REPOSTRX\_ANTHROPIC\_KEY must also be added to the site's environment variables in Netlify (.env only works locally).
+
+\- Customer reply: A 401 from Claude means the key that reached Anthropic wasn't valid, even if the key in your settings is correct. On Netlify, the AI Gateway can automatically set its own ANTHROPIC\_API\_KEY, which replaces yours. Store your key under a different name (for example MYAPP\_ANTHROPIC\_KEY), read that name in your function, and redeploy.
+
+
+
+\## 2026-11-11: Substack import returned only navigation
+
+\- What I saw: drafts said "the text I could access was mostly page navigation."
+
+\- Diagnosis: a diagnostic script showed the extracted text was only 432 characters: byline, Share buttons, footer and "This site requires JavaScript to run correctly." Blotato still reported the import as "completed".
+
+\- Cause: Blotato extracted the page shell, not the article body. Substack loads the article with JavaScript, and the extractor doesn't run JavaScript.
+
+\- Good: Claude didn't invent content. Bad: the app produced useless drafts instead of an error.
+
+\- Fix: detect "no real content" and stop with a clear message; add a paste-the-text fallback. Claude's structured output now starts with a contentFound true/false field, and drafts.mjs returns a 422 when it's false.
+
+\- Lesson: "completed" means the job finished, not that it got what I needed. Check the result itself.
+
+\- Customer reply: Your import finished, but the page didn't give us the article itself, only its menus and footer. This happens with sites like Substack that load articles with JavaScript. Paste the article text into the "Or paste the article text" box and add the link, and you'll get your drafts.
+
+
+
+\## 2026-11-11: X draft promised a link that wasn't there
+
+\- What I saw: the X draft was exactly 280/280 and said "Full guide in my latest post", but had no link.
+
+\- Cause: the prompt told Claude to leave links out, and the character limit didn't leave room for one. X counts every link as 23 characters, whatever its real length.
+
+\- Fix: drafts.mjs takes an optional url. With a link, the X draft aims for 240 characters (under 255), and the server adds the link to all three drafts, so it's always exact. Without one, Claude is told not to promise a link. The server check and the page counter both count links as 23. Pasted text has an optional "Article link" field.
+
+
+
+
+
 **## Good practices**
 
 \- 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.

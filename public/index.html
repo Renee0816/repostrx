@@ -6,19 +6,228 @@
   <title>RepostRx</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    section { margin-top: 2rem; }
     button { font-size: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
     button:disabled { cursor: wait; opacity: 0.6; }
+    input[type="url"] { font-size: 1rem; padding: 0.5rem; width: 100%; box-sizing: border-box; margin-bottom: 0.5rem; }
+    textarea { font: inherit; padding: 0.5rem; width: 100%; box-sizing: border-box; }
+    label { display: block; font-weight: 600; margin-top: 1rem; }
+    .count { font-size: 0.875rem; color: #555; }
+    .count.over { color: #b00020; font-weight: 600; }
     .error { color: #b00020; }
+    .warning { color: #8a5300; }
   </style>
 </head>
 <body>
   <h1>RepostRx</h1>
   <p>Turn an article into scheduled social posts.</p>
 
-  <button id="load">Load my accounts</button>
-  <div id="result" aria-live="polite"></div>
+  <section>
+    <h2>1. Import an article</h2>
+    <form id="import-form">
+      <label for="url">Article URL</label>
+      <input id="url" type="url" placeholder="https://example.com/article" required>
+      <button id="import" type="submit">Import</button>
+    </form>
+    <div id="import-status" aria-live="polite"></div>
+
+    <form id="paste-form">
+      <label for="paste-text">Or paste the article text</label>
+      <textarea id="paste-text" rows="8" required
+        placeholder="Use this if the import can't read the article (for example, Substack posts)."></textarea>
+      <label for="paste-url">Article link (optional, added to each draft)</label>
+      <input id="paste-url" type="url" placeholder="https://example.com/article">
+      <button id="paste-button" type="submit">Write drafts from pasted text</button>
+    </form>
+  </section>
+
+  <section id="drafts" hidden>
+    <h2>2. Edit your drafts</h2>
+    <p id="article-title"></p>
+    <div id="draft-warnings"></div>
+
+    <label for="draft-linkedin">LinkedIn</label>
+    <textarea id="draft-linkedin" rows="10"></textarea>
+
+    <label for="draft-x">X</label>
+    <textarea id="draft-x" rows="4"></textarea>
+    <div id="x-count" class="count" aria-live="polite"></div>
+
+    <label for="draft-facebook">Facebook</label>
+    <textarea id="draft-facebook" rows="8"></textarea>
+  </section>
+
+  <section>
+    <h2>Connected accounts</h2>
+    <button id="load">Load my accounts</button>
+    <div id="result" aria-live="polite"></div>
+  </section>
 
   <script>
+    // ---------- Shared helpers ----------
+
+    const POLL_EVERY_MS = 3000;     // check the import every 3 seconds
+    const POLL_LIMIT_MS = 120000;   // give up after 2 minutes
+    const X_LIMIT = 280;
+
+    // Reads a JSON reply. If the server sent something else (e.g. Netlify's own
+    // timeout page), returns a plain-English error instead of crashing.
+    async function readJson(res) {
+      try {
+        return await res.json();
+      } catch {
+        return { error: `The server sent an unexpected reply (status ${res.status}). Try again shortly.` };
+      }
+    }
+
+    // Shows a message in a container. textContent shows text as-is, so it can't inject HTML.
+    function showMessage(container, message, className = "") {
+      container.textContent = "";
+      const p = document.createElement("p");
+      if (className) p.className = className;
+      p.textContent = message;
+      container.appendChild(p);
+    }
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // ---------- Import, poll, then draft ----------
+
+    const importForm = document.getElementById("import-form");
+    const importButton = document.getElementById("import");
+    const urlInput = document.getElementById("url");
+    const importStatus = document.getElementById("import-status");
+    const draftsSection = document.getElementById("drafts");
+
+    const pasteForm = document.getElementById("paste-form");
+    const pasteButton = document.getElementById("paste-button");
+    const pasteText = document.getElementById("paste-text");
+
+    // Disables both buttons while either job runs, so only one runs at a time.
+    function setBusy(busy) {
+      importButton.disabled = busy;
+      pasteButton.disabled = busy;
+      if (busy) draftsSection.hidden = true;
+    }
+
+    importForm.addEventListener("submit", async (event) => {
+      event.preventDefault(); // stay on the page instead of reloading it
+      setBusy(true);
+      try {
+        const url = urlInput.value.trim();
+        const article = await importArticle(url);
+        if (article) await writeDrafts({ ...article, url });
+      } catch {
+        showMessage(importStatus, "Couldn't reach the RepostRx server. Check your connection and try again.", "error");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    // Fallback: skip the import and write drafts from text the user pasted.
+    pasteForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setBusy(true);
+      try {
+        await writeDrafts({
+          title: "your pasted text",
+          text: pasteText.value.trim(),
+          url: document.getElementById("paste-url").value.trim(), // may be empty
+        });
+      } catch {
+        showMessage(importStatus, "Couldn't reach the RepostRx server. Check your connection and try again.", "error");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    // Starts the import, then checks until it's done. Returns { title, text } or null.
+    async function importArticle(url) {
+      showMessage(importStatus, "Sending the link to Blotato…");
+      const startRes = await fetch("/.netlify/functions/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const start = await readJson(startRes);
+      if (!startRes.ok) {
+        showMessage(importStatus, start.error, "error");
+        return null;
+      }
+
+      const deadline = Date.now() + POLL_LIMIT_MS;
+      while (Date.now() < deadline) {
+        await wait(POLL_EVERY_MS);
+        const res = await fetch(`/.netlify/functions/import-status?id=${encodeURIComponent(start.id)}`);
+        const data = await readJson(res);
+
+        if (!res.ok) {
+          showMessage(importStatus, data.error, "error");
+          return null;
+        }
+        if (data.status === "completed") {
+          return { title: data.title, text: data.text };
+        }
+        if (data.status === "failed") {
+          showMessage(importStatus, data.error, "error");
+          return null;
+        }
+        const seconds = Math.round((POLL_LIMIT_MS - (deadline - Date.now())) / 1000);
+        showMessage(importStatus, data.status === "queued"
+          ? `Queued at Blotato… (${seconds}s)`
+          : `Reading the article… (${seconds}s)`);
+      }
+
+      showMessage(importStatus, "The import is taking longer than 2 minutes, so we stopped checking. The site may be slow or blocking imports. Try again, or try a different article.", "error");
+      return null;
+    }
+
+    // Asks Claude for the three drafts and shows them in editable boxes.
+    async function writeDrafts(article) {
+      showMessage(importStatus, `Writing drafts from "${article.title}"…`);
+      const res = await fetch("/.netlify/functions/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: article.text, url: article.url }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) {
+        showMessage(importStatus, data.error, "error");
+        return;
+      }
+
+      document.getElementById("article-title").textContent = `From: ${article.title}`;
+      document.getElementById("draft-linkedin").value = data.linkedin;
+      document.getElementById("draft-x").value = data.x;
+      document.getElementById("draft-facebook").value = data.facebook;
+      updateXCount();
+
+      const warningsBox = document.getElementById("draft-warnings");
+      warningsBox.textContent = "";
+      for (const warning of data.warnings ?? []) {
+        const p = document.createElement("p");
+        p.className = "warning";
+        p.textContent = warning;
+        warningsBox.appendChild(p);
+      }
+
+      showMessage(importStatus, "Drafts ready. Edit them below. Nothing has been posted.");
+      draftsSection.hidden = false;
+    }
+
+    // Live character counter for the X draft, matching the server's check:
+    // X counts any link as 23 characters, and [...text] counts an emoji as one.
+    const xBox = document.getElementById("draft-x");
+    const xCount = document.getElementById("x-count");
+    function updateXCount() {
+      const length = [...xBox.value.replace(/https?:\/\/\S+/g, "x".repeat(23))].length;
+      xCount.textContent = `${length} / ${X_LIMIT} characters`;
+      xCount.classList.toggle("over", length > X_LIMIT);
+    }
+    xBox.addEventListener("input", updateXCount);
+
+    // ---------- Connected accounts (milestone 1) ----------
+
     const button = document.getElementById("load");
     const result = document.getElementById("result");
 
@@ -27,14 +236,14 @@
       result.textContent = "Loading…";
       try {
         const res = await fetch("/.netlify/functions/accounts");
-        const data = await res.json();
+        const data = await readJson(res);
         if (!res.ok) {
-          showError(`Error ${res.status}: ${data.error}`);
+          showMessage(result, `Error ${res.status}: ${data.error}`, "error");
         } else {
           showAccounts(data.items ?? data);
         }
       } catch {
-        showError("Couldn't reach the RepostRx server. Check your connection and try again.");
+        showMessage(result, "Couldn't reach the RepostRx server. Check your connection and try again.", "error");
       } finally {
         button.disabled = false;
       }
@@ -54,14 +263,6 @@
         list.appendChild(item);
       }
       result.appendChild(list);
-    }
-
-    function showError(message) {
-      result.textContent = "";
-      const p = document.createElement("p");
-      p.className = "error";
-      p.textContent = message;
-      result.appendChild(p);
     }
   </script>
 </body>
