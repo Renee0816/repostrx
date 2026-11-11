@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepostRx</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    button { font-size: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
+    button:disabled { cursor: wait; opacity: 0.6; }
+    .error { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>RepostRx</h1>
+  <p>Turn an article into scheduled social posts.</p>
+
+  <button id="load">Load my accounts</button>
+  <div id="result" aria-live="polite"></div>
+
+  <script>
+    const button = document.getElementById("load");
+    const result = document.getElementById("result");
+
+    button.addEventListener("click", async () => {
+      button.disabled = true; // prevent double clicks while waiting
+      result.textContent = "Loading…";
+      try {
+        const res = await fetch("/.netlify/functions/accounts");
+        const data = await res.json();
+        if (!res.ok) {
+          showError(`Error ${res.status}: ${data.error}`);
+        } else {
+          showAccounts(data.items ?? data);
+        }
+      } catch {
+        showError("Couldn't reach the RepostRx server. Check your connection and try again.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function showAccounts(accounts) {
+      result.textContent = "";
+      if (!Array.isArray(accounts) || accounts.length === 0) {
+        result.textContent = "No connected accounts found. Connect one at my.blotato.com.";
+        return;
+      }
+      const list = document.createElement("ul");
+      for (const a of accounts) {
+        const item = document.createElement("li");
+        // textContent shows text as-is, so names can't inject HTML
+        item.textContent = `${a.platform}: ${a.fullname || a.username || "(no name)"} (ID ${a.id})`;
+        list.appendChild(item);
+      }
+      result.appendChild(list);
+    }
+
+    function showError(message) {
+      result.textContent = "";
+      const p = document.createElement("p");
+      p.className = "error";
+      p.textContent = message;
+      result.appendChild(p);
+    }
+  </script>
+</body>
+</html>

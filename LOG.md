@@ -82,6 +82,40 @@
 
 
 
+\## 2026-11-11: npm blocked by PowerShell
+
+\- What I saw: npm -v failed with "npm.ps1 cannot be loaded because running scripts is disabled on this system."
+
+\- Cause: Windows PowerShell's default execution policy blocks .ps1 scripts, including npm's launcher.
+
+\- Fix: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned (my user only; local scripts run, unsigned downloaded scripts are still blocked).
+
+
+
+\## 2026-11-11: npm blocked by PowerShell
+
+\- What I saw: npm -v failed with "running scripts is disabled on this system."
+
+\- Fix: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned (my user only).
+
+
+
+\## 2026-11-11: npm skipped install scripts for netlify-cli and esbuild
+
+\- Cause: newer npm blocks install scripts by default for safety.
+
+\- Fix: npm install -g netlify-cli --allow-scripts=netlify-cli,esbuild (only for tools I chose).
+
+
+
+\## 2026-11-11: Claude Code said Node wasn't installed (it was)
+
+\- Cause: Claude Code started before I installed Node, so it kept the old PATH.
+
+\- Fix: restart the program (/exit, claude --continue). Programs read PATH when they start.
+
+
+
 **## Good practices**
 
 \- 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.
@@ -101,4 +135,6 @@
 \- 2026-11-10: GitHub MCP uses a fine-grained token (1 repo, minimal permissions, 30-day expiry) stored as a Windows environment variable. Claude Code's config only holds ${GITHUB\_MCP\_TOKEN}, and it shows the header as \[REDACTED].
 
 \- 2026-11-10: Ask rules for mcp\_\_Blotato and mcp\_\_github. Allowed "don't ask again" only for read-only tools like List commits.
+
+\- 2026-11-11: npm blocks install scripts by default. Only allow them for packages I chose and trust
 

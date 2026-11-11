@@ -1,0 +1,5 @@
+[build]
+  # Website files sent to the browser
+  publish = "public"
+  # Server-side code that can safely use API keys
+  functions = "netlify/functions"
