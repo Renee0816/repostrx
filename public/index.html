@@ -9,6 +9,7 @@
     section { margin-top: 2rem; }
     button { font-size: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
     button:disabled { cursor: wait; opacity: 0.6; }
+    input[type="datetime-local"] { font-size: 1rem; padding: 0.4rem; }
     input[type="url"] { font-size: 1rem; padding: 0.5rem; width: 100%; box-sizing: border-box; margin-bottom: 0.5rem; }
     textarea { font: inherit; padding: 0.5rem; width: 100%; box-sizing: border-box; }
     label { display: block; font-weight: 600; margin-top: 1rem; }
@@ -16,6 +17,12 @@
     .count.over { color: #b00020; font-weight: 600; }
     .error { color: #b00020; }
     .warning { color: #8a5300; }
+    .schedule { margin-top: 0.5rem; padding: 0.5rem 0.75rem; background: #f4f4f6; border-radius: 6px; font-size: 0.95rem; }
+    .muted { color: #555; }
+    .confirm { margin-top: 0.75rem; padding: 0.75rem; border: 2px solid #8a5300; border-radius: 6px; background: #fff8e6; }
+    .confirm-text { white-space: pre-wrap; background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; }
+    .confirm button { margin-right: 0.5rem; }
+    .success { color: #1b6e20; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -48,13 +55,21 @@
 
     <label for="draft-linkedin">LinkedIn</label>
     <textarea id="draft-linkedin" rows="10"></textarea>
+    <div class="schedule" id="schedule-linkedin" aria-live="polite"></div>
 
     <label for="draft-x">X</label>
     <textarea id="draft-x" rows="4"></textarea>
     <div id="x-count" class="count" aria-live="polite"></div>
+    <div class="schedule" id="schedule-twitter" aria-live="polite"></div>
 
     <label for="draft-facebook">Facebook</label>
     <textarea id="draft-facebook" rows="8"></textarea>
+    <div class="schedule" id="schedule-facebook" aria-live="polite"></div>
+  </section>
+
+  <section id="scheduled" hidden>
+    <h2>Scheduled this session</h2>
+    <ul id="scheduled-log"></ul>
   </section>
 
   <section>
@@ -213,6 +228,306 @@
 
       showMessage(importStatus, "Drafts ready. Edit them below. Nothing has been posted.");
       draftsSection.hidden = false;
+      showScheduleOptions(); // runs in the background; the drafts are usable right away
+    }
+
+    // ---------- Scheduling: which account each draft would post to ----------
+
+    // Draft platforms, using Blotato's names ("twitter" is X).
+    const SCHEDULE_PLATFORMS = [
+      { platform: "linkedin", name: "LinkedIn", article: "a", textareaId: "draft-linkedin" },
+      { platform: "twitter", name: "X", article: "an", textareaId: "draft-x" },
+      { platform: "facebook", name: "Facebook", article: "a", textareaId: "draft-facebook" },
+    ];
+
+    // The account chosen for each platform, filled in by showScheduleOptions.
+    // Account IDs always come from the accounts function, never from this code.
+    const chosenAccount = {};
+
+    function accountLabel(a) {
+      return `${a.platform}: ${a.fullname || a.username || "(no name)"} (ID ${a.id})`;
+    }
+
+    async function showScheduleOptions() {
+      for (const { platform, textareaId } of SCHEDULE_PLATFORMS) {
+        showMessage(document.getElementById(`schedule-${platform}`), "Checking connected accounts…", "muted");
+        delete chosenAccount[platform];
+        document.getElementById(textareaId).readOnly = false; // new drafts are editable again
+      }
+
+      let accounts;
+      try {
+        const res = await fetch("/.netlify/functions/accounts");
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error);
+        accounts = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
+      } catch (err) {
+        const message = `Scheduling is unavailable because your accounts couldn't be loaded: ${err.message || "connection problem."}`;
+        for (const { platform } of SCHEDULE_PLATFORMS) {
+          showMessage(document.getElementById(`schedule-${platform}`), message, "error");
+        }
+        return;
+      }
+
+      for (const { platform, name, article } of SCHEDULE_PLATFORMS) {
+        const box = document.getElementById(`schedule-${platform}`);
+        const matches = accounts.filter((a) => a.platform === platform);
+
+        if (matches.length === 0) {
+          showMessage(box, `Not connected. Connect ${article} ${name} account at my.blotato.com to schedule this draft.`, "muted");
+          continue;
+        }
+        if (platform === "facebook") {
+          showMessage(box, "Scheduling to Facebook isn't supported yet (it needs a Page ID).", "muted");
+          continue;
+        }
+
+        box.textContent = "";
+        if (matches.length === 1) {
+          chosenAccount[platform] = matches[0];
+          const p = document.createElement("p");
+          p.textContent = `Posts to: ${accountLabel(matches[0])}`;
+          box.appendChild(p);
+        } else {
+          // Several accounts on one platform: let the user pick.
+          const label = document.createElement("label");
+          label.textContent = "Posts to:";
+          const select = document.createElement("select");
+          select.id = `account-${platform}`;
+          label.htmlFor = select.id;
+          for (const a of matches) {
+            const option = document.createElement("option");
+            option.value = String(a.id);
+            option.textContent = accountLabel(a);
+            select.appendChild(option);
+          }
+          chosenAccount[platform] = matches[0];
+          select.addEventListener("change", () => {
+            chosenAccount[platform] = matches.find((a) => String(a.id) === select.value);
+          });
+          box.append(label, select);
+        }
+        addTimePicker(box, platform);
+        addScheduleButton(box, platform);
+      }
+    }
+
+    // ---------- Scheduling: pick a time (local), shown in both local and UTC ----------
+
+    const MIN_LEAD_MINUTES = 5; // same rule as schedule.mjs
+    const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // e.g. "America/Los_Angeles"
+
+    // The chosen time for each platform as a Date, or null if none or invalid.
+    const chosenTime = {};
+
+    // Formats a Date for the <input type="datetime-local"> min attribute (local time, no seconds).
+    function toLocalInputValue(date) {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    // "Wed, Nov 18, 2026, 9:00 AM PST (America/Los_Angeles)"
+    function formatLocal(date) {
+      const text = date.toLocaleString("en-US", {
+        weekday: "short", month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit", timeZoneName: "short",
+      });
+      return `${text} (${TIME_ZONE})`;
+    }
+
+    function addTimePicker(box, platform) {
+      chosenTime[platform] = null;
+
+      const label = document.createElement("label");
+      label.textContent = "When to post (your local time):";
+      const input = document.createElement("input");
+      input.type = "datetime-local";
+      input.id = `time-${platform}`;
+      label.htmlFor = input.id;
+      input.min = toLocalInputValue(new Date(Date.now() + MIN_LEAD_MINUTES * 60000));
+
+      const line = document.createElement("p");
+      line.className = "muted";
+      line.textContent = "Pick a date and time.";
+
+      input.addEventListener("input", () => {
+        chosenTime[platform] = null;
+        // A datetime-local value has no time zone, so the browser reads it as local time.
+        const when = input.value ? new Date(input.value) : null;
+        if (!when || Number.isNaN(when.getTime())) {
+          line.className = "muted";
+          line.textContent = "Pick a date and time.";
+          return;
+        }
+        const minutesAhead = (when.getTime() - Date.now()) / 60000;
+        if (minutesAhead < MIN_LEAD_MINUTES) {
+          line.className = "error";
+          line.textContent = minutesAhead < 0
+            ? "That time is in the past. Pick a future time."
+            : `That's too soon. Pick a time at least ${MIN_LEAD_MINUTES} minutes from now.`;
+          return;
+        }
+        chosenTime[platform] = when;
+        line.className = "";
+        line.textContent = `${formatLocal(when)} → ${when.toISOString()} (UTC)`;
+      });
+
+      box.append(label, input, line);
+    }
+
+    // ---------- Scheduling: confirm, send once, show the ID ----------
+
+    function tooSoon(when) {
+      return when.getTime() - Date.now() < MIN_LEAD_MINUTES * 60000;
+    }
+
+    function addScheduleButton(box, platform) {
+      const { name, textareaId } = SCHEDULE_PLATFORMS.find((p) => p.platform === platform);
+      const textarea = document.getElementById(textareaId);
+      const timeInput = document.getElementById(`time-${platform}`);
+
+      const scheduleButton = document.createElement("button");
+      scheduleButton.type = "button";
+      scheduleButton.textContent = `Schedule ${name} post…`;
+      const panel = document.createElement("div");   // the confirm step appears here
+      const message = document.createElement("div"); // errors and progress
+      message.setAttribute("aria-live", "polite");
+      box.append(scheduleButton, panel, message);
+
+      // While confirming or sending, the draft and time can't change.
+      function lock(locked) {
+        textarea.readOnly = locked;
+        timeInput.disabled = locked;
+        scheduleButton.hidden = locked;
+      }
+
+      function closePanel() {
+        panel.textContent = "";
+        panel.className = "";
+      }
+
+      // Step 1 of 2: check everything, then show the confirm panel. Nothing is sent yet.
+      scheduleButton.addEventListener("click", () => {
+        message.textContent = "";
+        const account = chosenAccount[platform];
+        const when = chosenTime[platform];
+        const text = textarea.value.trim();
+        if (!account) return showMessage(message, `No connected ${name} account. Reload the page and try again.`, "error");
+        if (!text) return showMessage(message, "The draft is empty. Write something first.", "error");
+        if (!when || tooSoon(when)) {
+          return showMessage(message, `Pick a time at least ${MIN_LEAD_MINUTES} minutes from now first.`, "error");
+        }
+        // Snapshot: exactly what will be sent, whatever happens on the page afterwards.
+        lock(true);
+        showConfirm({ text, account, when });
+      });
+
+      function showConfirm(snapshot) {
+        closePanel();
+        panel.className = "confirm";
+
+        const heading = document.createElement("p");
+        const strong = document.createElement("strong");
+        strong.textContent = "Check before scheduling.";
+        heading.append(strong, " This will publish publicly at the time below.");
+        const textBox = document.createElement("div");
+        textBox.className = "confirm-text";
+        textBox.textContent = snapshot.text; // exact text, line breaks kept
+        const accountLine = document.createElement("p");
+        accountLine.textContent = `Account: ${accountLabel(snapshot.account)}`;
+        const timeLine = document.createElement("p");
+        timeLine.textContent = `Time: ${formatLocal(snapshot.when)} → ${snapshot.when.toISOString()} (UTC)`;
+
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.textContent = "Confirm and schedule";
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.textContent = "Cancel";
+
+        panel.append(heading, textBox, accountLine, timeLine, confirmButton, cancelButton);
+
+        cancelButton.addEventListener("click", () => {
+          closePanel();
+          lock(false);
+        });
+
+        // Step 2 of 2: send exactly once.
+        let sent = false; // backup guard in case two clicks arrive before the button disables
+        confirmButton.addEventListener("click", async () => {
+          if (sent) return;
+          sent = true;
+          confirmButton.disabled = true;
+          cancelButton.disabled = true;
+
+          if (tooSoon(snapshot.when)) {
+            closePanel();
+            lock(false);
+            return showMessage(message, `That time is now less than ${MIN_LEAD_MINUTES} minutes away. Pick a later time. Nothing was sent.`, "error");
+          }
+
+          showMessage(message, "Sending to Blotato…", "muted");
+          // Don't let a new import replace the drafts while this is in flight.
+          importButton.disabled = true;
+          pasteButton.disabled = true;
+          let res, data;
+          try {
+            res = await fetch("/.netlify/functions/schedule", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                platform,
+                accountId: String(snapshot.account.id),
+                text: snapshot.text,
+                scheduledTime: snapshot.when.toISOString(),
+              }),
+            });
+            data = await readJson(res);
+          } catch {
+            // The request may or may not have reached Blotato. Stay locked.
+            closePanel();
+            return showMessage(message, "Lost the connection while scheduling, so we don't know if the post was scheduled. Check your schedule at my.blotato.com before trying again (reload the page to retry).", "error");
+          } finally {
+            importButton.disabled = false;
+            pasteButton.disabled = false;
+          }
+
+          if (res.ok && data.postSubmissionId) {
+            showScheduled(snapshot, data);
+          } else if (res.ok || data.outcomeUnknown || res.status >= 500) {
+            // Possibly scheduled: stay locked so it can't be sent twice.
+            closePanel();
+            showMessage(message, `${data.error || "Unexpected reply."} (Reload the page to retry after checking.)`, "error");
+          } else {
+            // Clearly rejected (4xx): nothing was scheduled, so let the user fix it.
+            closePanel();
+            lock(false);
+            showMessage(message, data.error, "error");
+          }
+        });
+      }
+
+      function showScheduled(snapshot, data) {
+        const at = new Date(data.scheduledTime || snapshot.when);
+        const when = `${formatLocal(at)} → ${at.toISOString()} (UTC)`;
+        box.textContent = ""; // remove every control: nothing left to click twice
+        const done = document.createElement("p");
+        done.className = "success";
+        done.textContent = `Scheduled ✓ ${when}`;
+        const id = document.createElement("p");
+        id.textContent = `postSubmissionId: ${data.postSubmissionId}`;
+        const hint = document.createElement("p");
+        hint.className = "muted";
+        hint.textContent = "To change or cancel it, use my.blotato.com. Editing the draft here won't change the scheduled post.";
+        box.append(done, id, hint);
+        textarea.readOnly = true;
+
+        // Keep a record that survives importing a new article.
+        const item = document.createElement("li");
+        item.textContent = `${name} · ${accountLabel(snapshot.account)} · ${when} · postSubmissionId ${data.postSubmissionId}`;
+        document.getElementById("scheduled-log").appendChild(item);
+        document.getElementById("scheduled").hidden = false;
+      }
     }
 
     // Live character counter for the X draft, matching the server's check:
@@ -259,7 +574,7 @@
       for (const a of accounts) {
         const item = document.createElement("li");
         // textContent shows text as-is, so names can't inject HTML
-        item.textContent = `${a.platform}: ${a.fullname || a.username || "(no name)"} (ID ${a.id})`;
+        item.textContent = accountLabel(a);
         list.appendChild(item);
       }
       result.appendChild(list);

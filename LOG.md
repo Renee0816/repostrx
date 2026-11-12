@@ -164,6 +164,42 @@
 
 
 
+\## 2026-11-12: Red console error that wasn't my code
+
+\- What I saw: "\[Violation] Permissions policy violation: unload is not allowed" from frame.js.
+
+\- Clue: frame.js isn't part of RepostRx (my code is all in index.html).
+
+\- Test: opened the page in Incognito (extensions off). Console was clean.
+
+\- Cause: a browser extension injecting its own script.
+
+\- Support lesson: first ask "which file is it from?", then "does it happen in Incognito?"
+
+
+
+\- 2026-11-12: Blotato scheduled posts can't be edited in place. Options are Reschedule, Move to drafts, or Delete. To change the text: Move to drafts → edit → schedule again.
+
+
+
+\## 2026-11-12: AI didn't always follow the length limit
+
+\- What I saw: some X drafts came back at 281 and 302 characters, although the prompt asked for 240 (with a link) or 260.
+
+\- Cause: language models don't count characters reliably, so a limit in the prompt is a target, not a guarantee.
+
+\- Fix: already in place. drafts.mjs counts the X draft the way X does (links = 23) and returns a warning, the page counter turns red, and schedule.mjs refuses anything over 280.
+
+\- Lesson: never rely on the prompt alone for a hard rule. Check it in code.
+
+
+
+\## 2026-11-12: Milestone 3: first real post scheduled
+
+\- Scheduled for Tue Nov 17, 11:11 AM PST (2026-11-17T19:11:00Z). postSubmissionId 5556c419-cb7f-44be-b26c-94010e8126b5.
+
+\- Confirmed twice: on my.blotato.com, and via the Blotato MCP status check (status "scheduled", same UTC time), so the Pacific → UTC conversion is correct.
+
 
 
 **## Good practices**
@@ -186,5 +222,11 @@
 
 \- 2026-11-10: Ask rules for mcp\_\_Blotato and mcp\_\_github. Allowed "don't ask again" only for read-only tools like List commits.
 
-\- 2026-11-11: npm blocks install scripts by default. Only allow them for packages I chose and trust
+\- 2026-11-11: npm blocks install scripts by default. Only allow them for packages I chose and trust.
+
+
+
+\- 2026-11-12: Scheduling safety. Blotato publishes IMMEDIATELY if a post has no scheduledTime, so schedule.mjs checks the time first (at least 5 minutes in the future) before anything else runs. The page and the server both enforce 5+ minutes, and the confirm step re-checks just before sending, so a time that went stale while the panel was open can't send.
+
+\- 2026-11-12: Defense in depth. The server re-checks that the account belongs to the platform, and error tests used a fake account ID as well as the bad value, so no real post was possible even if one check had a bug.
 
