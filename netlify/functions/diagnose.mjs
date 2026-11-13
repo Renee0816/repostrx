@@ -7,6 +7,8 @@
 // source: "known" (lookup table), "ai" (Claude suggestion, with warnings) or "unknown".
 // It never contacts Blotato and never creates, retries or deletes anything.
 
+import { requirePassword } from "../lib/auth.mjs";
+
 const MAX_INPUT_CHARS = 20000;
 const SYMPTOMS = ["", "duplicate", "not-published", "stuck"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -257,6 +259,10 @@ function internalNote({ status, reqId, postSubmissionId, likelyCause }) {
 }
 
 export default async (req) => {
+  // Password first: nothing below runs for strangers.
+  const denied = requirePassword(req);
+  if (denied) return denied;
+
   if (req.method !== "POST") {
     return reply(405, { error: "This endpoint only accepts POST requests." });
   }

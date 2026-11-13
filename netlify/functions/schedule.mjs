@@ -5,7 +5,9 @@
 // SAFETY: Blotato publishes IMMEDIATELY if a post has no scheduledTime.
 // So the time is checked first, and every check runs before Blotato is called.
 
-const BLOTATO_POSTS_URL = "https://backend.blotato.com/v2/posts";
+import { requirePassword } from "../lib/auth.mjs";
+
+const BLOTATO_POSTS_URL ="https://backend.blotato.com/v2/posts";
 const BLOTATO_ACCOUNTS_URL = "https://backend.blotato.com/v2/users/me/accounts";
 const MIN_LEAD_MINUTES = 5; // times closer than this could effectively post right away
 
@@ -39,6 +41,10 @@ function xLength(s) {
 }
 
 export default async (req) => {
+  // Password first: nothing below runs for strangers.
+  const denied = requirePassword(req);
+  if (denied) return denied;
+
   if (req.method !== "POST") {
     return reply(405, { error: "This endpoint only accepts POST requests." });
   }

@@ -2,7 +2,9 @@
 // Asks Blotato for the social accounts connected to our API key.
 // The key stays here on the server; the browser never sees it.
 
-const BLOTATO_URL = "https://backend.blotato.com/v2/users/me/accounts";
+import { requirePassword } from "../lib/auth.mjs";
+
+const BLOTATO_URL ="https://backend.blotato.com/v2/users/me/accounts";
 
 // Plain-English explanations for errors we expect from Blotato.
 const MESSAGES = {
@@ -20,6 +22,10 @@ function reply(status, body) {
 }
 
 export default async (req) => {
+  // Password first: nothing below runs for strangers.
+  const denied = requirePassword(req);
+  if (denied) return denied;
+
   if (req.method !== "GET") {
     return reply(405, { error: "This endpoint only accepts GET requests." });
   }

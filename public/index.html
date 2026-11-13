@@ -51,6 +51,20 @@
   <h1>RepostRx</h1>
   <p>Turn an article into scheduled social posts.</p>
 
+  <!-- Sign-in: the app password is typed here and remembered in this browser only. -->
+  <section id="signin">
+    <h2>Sign in</h2>
+    <form id="signin-form">
+      <label for="app-password">RepostRx password</label>
+      <input id="app-password" type="password" autocomplete="current-password" required>
+      <button id="signin-button" type="submit">Sign in</button>
+    </form>
+    <div id="signin-status" aria-live="polite"></div>
+  </section>
+  <p id="signed-in" class="muted" hidden>
+    Signed in on this browser. <button id="signout" type="button">Sign out</button>
+  </p>
+
   <section>
     <h2>1. Import an article</h2>
     <form id="import-form">
@@ -191,6 +205,76 @@
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    // ---------- App password (milestone 6) ----------
+    // Typed in by the user and kept in this browser, never written into the page's code.
+    // Every function checks it (netlify/lib/auth.mjs).
+
+    const PASSWORD_KEY = "repostrx.password";
+    const signinSection = document.getElementById("signin");
+    const signedInLine = document.getElementById("signed-in");
+    const signinForm = document.getElementById("signin-form");
+    const signinButton = document.getElementById("signin-button");
+    const passwordInput = document.getElementById("app-password");
+    const signinStatus = document.getElementById("signin-status");
+
+    let appPassword = "";
+    try { appPassword = localStorage.getItem(PASSWORD_KEY) || ""; } catch {}
+
+    // Saves (or forgets, when empty) the password and shows the matching box.
+    function rememberPassword(value) {
+      appPassword = value;
+      try {
+        if (value) localStorage.setItem(PASSWORD_KEY, value);
+        else localStorage.removeItem(PASSWORD_KEY);
+      } catch {}
+      signinSection.hidden = Boolean(value);
+      signedInLine.hidden = !value;
+    }
+
+    // Every call to a RepostRx function goes through here, so each carries the password.
+    // If the server says the password is wrong (or not set up), forget it and ask again.
+    async function api(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: { ...(options.headers ?? {}), "x-repostrx-password": appPassword },
+      });
+      if (res.headers.get("x-repostrx-auth")) {
+        rememberPassword("");
+        const data = await readJson(res.clone()); // clone: the caller still reads the original
+        showMessage(signinStatus, data.error, "error");
+      }
+      return res;
+    }
+
+    // Checks the password with one read-only call (list accounts) before saving it.
+    signinForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const value = passwordInput.value;
+      signinButton.disabled = true;
+      showMessage(signinStatus, "Checking…", "muted");
+      try {
+        appPassword = value; // try it without saving yet
+        const res = await api("/.netlify/functions/accounts");
+        if (res.headers.get("x-repostrx-auth")) return; // api() already showed why
+        passwordInput.value = "";
+        signinStatus.textContent = "";
+        rememberPassword(value);
+        refreshBoard({ quiet: true });
+      } catch {
+        appPassword = "";
+        showMessage(signinStatus, "Couldn't reach the RepostRx server. Check your connection and try again.", "error");
+      } finally {
+        signinButton.disabled = false;
+      }
+    });
+
+    document.getElementById("signout").addEventListener("click", () => {
+      rememberPassword("");
+      showMessage(signinStatus, "Signed out. This browser no longer has the password.", "muted");
+    });
+
+    rememberPassword(appPassword); // show Sign in or Signed in, to match what's saved
+
     // ---------- Import, poll, then draft ----------
 
     const importForm = document.getElementById("import-form");
@@ -244,7 +328,7 @@
     // Starts the import, then checks until it's done. Returns { title, text } or null.
     async function importArticle(url) {
       showMessage(importStatus, "Sending the link to Blotato…");
-      const startRes = await fetch("/.netlify/functions/import", {
+      const startRes = await api("/.netlify/functions/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -258,7 +342,7 @@
       const deadline = Date.now() + POLL_LIMIT_MS;
       while (Date.now() < deadline) {
         await wait(POLL_EVERY_MS);
-        const res = await fetch(`/.netlify/functions/import-status?id=${encodeURIComponent(start.id)}`);
+        const res = await api(`/.netlify/functions/import-status?id=${encodeURIComponent(start.id)}`);
         const data = await readJson(res);
 
         if (!res.ok) {
@@ -285,7 +369,7 @@
     // Asks Claude for the three drafts and shows them in editable boxes.
     async function writeDrafts(article) {
       showMessage(importStatus, `Writing drafts from "${article.title}"…`);
-      const res = await fetch("/.netlify/functions/drafts", {
+      const res = await api("/.netlify/functions/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: article.text, url: article.url }),
@@ -342,7 +426,7 @@
 
       let accounts;
       try {
-        const res = await fetch("/.netlify/functions/accounts");
+        const res = await api("/.netlify/functions/accounts");
         const data = await readJson(res);
         if (!res.ok) throw new Error(data.error);
         accounts = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
@@ -557,7 +641,7 @@
           pasteButton.disabled = true;
           let res, data;
           try {
-            res = await fetch("/.netlify/functions/schedule", {
+            res = await api("/.netlify/functions/schedule", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -681,7 +765,7 @@
 
       let res;
       try {
-        res = await fetch(`/.netlify/functions/post-status?id=${encodeURIComponent(id)}`);
+        res = await api(`/.netlify/functions/post-status?id=${encodeURIComponent(id)}`);
       } catch {
         throw new Error("Couldn't reach the RepostRx server. Check your connection and try again.");
       }
@@ -859,6 +943,10 @@
 
     async function refreshBoard({ quiet = false } = {}) {
       if (refreshing) return;
+      if (!appPassword) {
+        if (!quiet) showMessage(boardStatus, "Sign in at the top of the page to check your posts.", "error");
+        return;
+      }
       const toCheck = posts.filter((p) => !FINAL_STATUSES.includes(p.status));
       if (toCheck.length === 0) {
         if (!quiet) showMessage(boardStatus, posts.length ? "Every post is published or failed, so there's nothing to recheck." : "No posts to check yet.", "muted");
@@ -882,6 +970,11 @@
               stoppedEarly = true;
               break;
             }
+            if (err.status === 401) {
+              // Wrong RepostRx password or Blotato key: every other check would fail too.
+              stoppedEarly = err.message;
+              break;
+            }
           } finally {
             savePosts();
             renderBoard();
@@ -892,7 +985,9 @@
         refreshButton.disabled = false;
       }
 
-      if (stoppedEarly) {
+      if (typeof stoppedEarly === "string") {
+        showMessage(boardStatus, `Stopped: ${stoppedEarly}`, "error");
+      } else if (stoppedEarly) {
         showMessage(boardStatus, "Stopped early: Blotato says we're checking too often. Wait a minute, then refresh again.", "error");
       } else if (failed) {
         showMessage(boardStatus, `Checked ${toCheck.length} posts. ${failed} couldn't be checked (see "Last check failed" below).`, "warning");
@@ -1008,7 +1103,7 @@
       try {
         let res;
         try {
-          res = await fetch("/.netlify/functions/diagnose", {
+          res = await api("/.netlify/functions/diagnose", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(input),
@@ -1131,7 +1226,7 @@
       button.disabled = true; // prevent double clicks while waiting
       result.textContent = "Loading…";
       try {
-        const res = await fetch("/.netlify/functions/accounts");
+        const res = await api("/.netlify/functions/accounts");
         const data = await readJson(res);
         if (!res.ok) {
           showMessage(result, `Error ${res.status}: ${data.error}`, "error");

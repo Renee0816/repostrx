@@ -140,6 +140,8 @@
 - Why it held: the error goes inside <error> tags and the prompt says to treat it only as data. As a backstop, the server checks the answer in code: numbers not in the error (a guessed ID), anything key-like, asking for a key, and a reply that isn't 3 sentences.
 - Lesson: anything a customer pastes can contain instructions. Treat it as data, and don't rely on the prompt alone. Check the output in code.
 
+- 2026-11-13: Right password rejected. .env and Chrome had two different passwords (two saved entries). Diagnosed by comparing length and first/last 2 characters without revealing it. Fixed by copying Chrome's password into .env and restarting netlify dev.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.

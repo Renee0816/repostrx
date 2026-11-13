@@ -2,7 +2,9 @@
 // READ-ONLY: asks Blotato for one post's status. It can't create, change or delete posts.
 // Returns { status, scheduledTime, publicUrl, errorMessage, summary }.
 
-const BLOTATO_URL = "https://backend.blotato.com/v2/posts/";
+import { requirePassword } from "../lib/auth.mjs";
+
+const BLOTATO_URL ="https://backend.blotato.com/v2/posts/";
 
 // Blotato's postSubmissionIds are UUIDs, e.g. 5556c419-cb7f-44be-b26c-94010e8126b5.
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,6 +36,10 @@ function reply(status, body) {
 }
 
 export default async (req) => {
+  // Password first: nothing below runs for strangers.
+  const denied = requirePassword(req);
+  if (denied) return denied;
+
   if (req.method !== "GET") {
     return reply(405, { error: "This endpoint only accepts GET requests." });
   }

@@ -3,7 +3,9 @@
 // the page then checks progress with import-status. We don't wait here
 // because Netlify functions time out after about 10 seconds.
 
-const BLOTATO_URL = "https://backend.blotato.com/v2/source-resolutions-v3";
+import { requirePassword } from "../lib/auth.mjs";
+
+const BLOTATO_URL ="https://backend.blotato.com/v2/source-resolutions-v3";
 
 // Plain-English explanations for errors we expect from Blotato.
 const MESSAGES = {
@@ -32,6 +34,10 @@ function isWebUrl(value) {
 }
 
 export default async (req) => {
+  // Password first: nothing below runs for strangers.
+  const denied = requirePassword(req);
+  if (denied) return denied;
+
   if (req.method !== "POST") {
     return reply(405, { error: "This endpoint only accepts POST requests." });
   }

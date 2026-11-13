@@ -2,7 +2,9 @@
 // Asks Claude to write one draft each for LinkedIn, X and Facebook.
 // Returns { linkedin, x, facebook, warnings }. Nothing is posted anywhere.
 
-const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
+import { requirePassword } from "../lib/auth.mjs";
+
+const CLAUDE_URL ="https://api.anthropic.com/v1/messages";
 const MODEL = "claude-haiku-5-5";
 const MAX_ARTICLE_CHARS = 100_000;
 const X_LIMIT = 280;
@@ -86,6 +88,10 @@ function reply(status, body) {
 }
 
 export default async (req) => {
+  // Password first: nothing below runs for strangers.
+  const denied = requirePassword(req);
+  if (denied) return denied;
+
   if (req.method !== "POST") {
     return reply(405, { error: "This endpoint only accepts POST requests." });
   }
