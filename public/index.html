@@ -33,6 +33,16 @@
     .badge.failed { background: #fbe4e6; color: #b00020; }
     .badge.in-progress { background: #fff1d6; color: #8a5300; }
     .badge.stuck { background: #fbe4e6; color: #b00020; }
+    select { font-size: 1rem; padding: 0.4rem; }
+    #doctor-form input[type="text"] { font-family: inherit; }
+    .raw { white-space: pre-wrap; word-break: break-word; background: #f4f4f6; border-radius: 4px; padding: 0.5rem; font-size: 0.85rem; font-family: ui-monospace, monospace; margin: 0.25rem 0; }
+    .doctor-result { margin-top: 1rem; padding: 0.75rem; border: 1px solid #ddd; border-radius: 6px; }
+    .doctor-result h3 { margin: 0.25rem 0 0.5rem; font-size: 1.05rem; }
+    .doctor-result h4 { margin: 0.75rem 0 0.25rem; font-size: 0.95rem; }
+    .badge.known { background: #e2f3e4; color: #1b6e20; }
+    .badge.unknown { background: #e6e6ea; color: #333; }
+    .badge.needs { background: #fff1d6; color: #8a5300; }
+    .badge.ai { background: #fff1d6; color: #8a5300; }
     #version { margin-top: 3rem; padding-top: 0.75rem; border-top: 1px solid #eee; font-size: 0.8rem; color: #888; }
     .post button { font-size: 0.85rem; padding: 0.25rem 0.6rem; }
   </style>
@@ -83,6 +93,12 @@
     <h2>Your posts</h2>
     <p class="muted">Saved in this browser only. Statuses come from Blotato.</p>
     <button id="board-refresh" type="button">Refresh statuses</button>
+    <p class="muted">
+      For testing Post Doctor:
+      <button id="add-sample-failed" type="button">Add a sample failed post</button>
+      <button id="add-sample-stuck" type="button">Add a sample stuck post</button>
+      (made-up IDs; nothing is created in Blotato)
+    </p>
     <form id="add-post-form">
       <label for="add-post-id">Add an existing post by its postSubmissionId</label>
       <input id="add-post-id" type="text" placeholder="5556c419-cb7f-44be-b26c-94010e8126b5" autocomplete="off" spellcheck="false">
@@ -94,6 +110,50 @@
   </section>
 
 
+  <section id="doctor">
+    <h2>Post Doctor</h2>
+    <p class="muted">Explain a failed post or a pasted error, with a customer reply. Nothing is sent to Blotato.</p>
+    <form id="doctor-form">
+      <label for="doctor-sample">Load a sample (from my build log)</label>
+      <select id="doctor-sample">
+        <option value="">Choose a sample…</option>
+        <option value="401">401 Unauthorized</option>
+        <option value="400-text">400 Missing text</option>
+        <option value="422-wrong-id">422 Account not found (wrong ID)</option>
+        <option value="422-mismatch">422 Account not found (platform mismatch)</option>
+        <option value="422-no-details">422 Account not found (no details)</option>
+        <option value="429">429 Too many requests</option>
+        <option value="duplicate">Post went out twice</option>
+        <option value="unknown">Unknown error (Unsupported media type)</option>
+      </select>
+
+      <label for="doctor-status">Status code (optional)</label>
+      <input id="doctor-status" type="text" inputmode="numeric" placeholder="e.g. 422" autocomplete="off">
+
+      <label for="doctor-error">Error (message or full JSON response)</label>
+      <textarea id="doctor-error" rows="6" spellcheck="false"
+        placeholder='{"message":"Account 99999 not found","details":{"availableAccounts":[...]}}'></textarea>
+
+      <label for="doctor-post-id">postSubmissionId (optional)</label>
+      <input id="doctor-post-id" type="text" autocomplete="off" spellcheck="false">
+
+      <label for="doctor-req-id">reqId (optional)</label>
+      <input id="doctor-req-id" type="text" autocomplete="off" spellcheck="false">
+
+      <label for="doctor-symptom">Symptom (for problems without an error)</label>
+      <select id="doctor-symptom">
+        <option value="">None</option>
+        <option value="duplicate">Post went out twice</option>
+        <option value="not-published">Never went out after a 201</option>
+        <option value="stuck">Stuck in progress</option>
+      </select>
+
+      <p><button id="doctor-run" type="submit">Diagnose</button></p>
+    </form>
+    <div id="doctor-status-line" aria-live="polite"></div>
+    <div id="doctor-result" aria-live="polite"></div>
+  </section>
+
   <section>
     <h2>Connected accounts</h2>
     <button id="load">Load my accounts</button>
@@ -101,7 +161,7 @@
   </section>
 
   <!-- VERSION: update this line each milestone. It shows which page version the tab is running. -->
-  <footer id="version">RepostRx · milestone 4 · 2026-11-13</footer>
+  <footer id="version">RepostRx · milestone 5 · 2026-11-13</footer>
 
   <script>
     // ---------- Shared helpers ----------
@@ -728,6 +788,20 @@
 
         addLine(li, `ID ${post.id}${post.lastChecked ? ` · last checked ${new Date(post.lastChecked).toLocaleString()}` : ""}`, "muted");
 
+        // Failed or stuck posts can be sent to Post Doctor.
+        if (post.status === "failed" || stuck !== null) {
+          const diagnose = document.createElement("button");
+          diagnose.type = "button";
+          diagnose.textContent = "Diagnose";
+          diagnose.addEventListener("click", () => {
+            document.getElementById("doctor").scrollIntoView({ behavior: "smooth" });
+            runDoctor(post.status === "failed"
+              ? { errorText: post.errorMessage || "Post failed (Blotato gave no error message)", postSubmissionId: post.id }
+              : { symptom: "stuck", postSubmissionId: post.id });
+          });
+          li.append(diagnose, " ");
+        }
+
         const remove = document.createElement("button");
         remove.type = "button";
         remove.textContent = "Remove from board";
@@ -829,8 +903,224 @@
 
     refreshButton.addEventListener("click", () => refreshBoard());
 
+    // Sample cards for testing Post Doctor without a real failure. Made-up IDs:
+    // the failed one is final (never rechecked); the stuck one is only ever looked up read-only.
+    const SAMPLE_POSTS = {
+      failed: () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        platformName: "SAMPLE",
+        accountLabel: "not a real post",
+        snippet: "Sample failed post for testing Post Doctor.",
+        status: "failed",
+        errorMessage: "Unsupported media type",
+        summary: "Blotato couldn't publish this post: Unsupported media type",
+        scheduledTime: null,
+        lastChecked: new Date().toISOString(),
+      }),
+      stuck: () => ({
+        id: "00000000-0000-0000-0000-000000000002",
+        platformName: "SAMPLE",
+        accountLabel: "not a real post",
+        snippet: "Sample stuck post for testing Post Doctor.",
+        status: "in-progress",
+        summary: "In progress, or Blotato may have no record of this ID.",
+        scheduledTime: null,
+        inProgressSince: new Date(Date.now() - 15 * 60000).toISOString(), // 15 minutes ago, so it's already flagged
+        lastChecked: new Date().toISOString(),
+      }),
+    };
+
+    function addSamplePost(kind) {
+      const sample = SAMPLE_POSTS[kind]();
+      if (posts.some((p) => p.id === sample.id)) {
+        return showMessage(boardStatus, "That sample is already on your board.", "muted");
+      }
+      savePostToBoard(sample);
+      showMessage(boardStatus, `Sample ${kind} post added. Click its Diagnose button.`, "muted");
+    }
+
+    document.getElementById("add-sample-failed").addEventListener("click", () => addSamplePost("failed"));
+    document.getElementById("add-sample-stuck").addEventListener("click", () => addSamplePost("stuck"));
+
     renderBoard();               // show saved posts as soon as the page loads…
     refreshBoard({ quiet: true }); // …then check the ones that can still change
+
+    // ---------- Post Doctor (milestone 5) ----------
+    // Sends a pasted error (or a failed post's error) to diagnose.mjs and shows the
+    // cause, fix, a customer reply and an internal note. Nothing is sent to Blotato.
+
+    // Samples from LOG.md, so the Doctor can be tested without any real failed post.
+    const DOCTOR_SAMPLES = {
+      "401": { statusCode: "401", errorText: '{"message":"Unauthorized"}' },
+      "400-text": { statusCode: "400", errorText: "body.post.content must have required property 'text'" },
+      "422-wrong-id": {
+        statusCode: "422",
+        errorText: JSON.stringify({ message: "Account 99999 not found", code: 5000, details: { availableAccounts: [42078] } }, null, 2),
+      },
+      "422-mismatch": {
+        statusCode: "422",
+        errorText: JSON.stringify({ message: "Account 42078 not found", code: 5000, details: { availableAccounts: [] } }, null, 2),
+      },
+      "422-no-details": { statusCode: "422", errorText: "Account 42078 not found" },
+      "429": { statusCode: "429", errorText: '{"message":"Rate limit exceeded"}' },
+      "duplicate": { symptom: "duplicate" },
+      "unknown": { errorText: "Unsupported media type" },
+    };
+
+    const doctorForm = document.getElementById("doctor-form");
+    const doctorFields = {
+      statusCode: document.getElementById("doctor-status"),
+      errorText: document.getElementById("doctor-error"),
+      postSubmissionId: document.getElementById("doctor-post-id"),
+      reqId: document.getElementById("doctor-req-id"),
+      symptom: document.getElementById("doctor-symptom"),
+    };
+    const doctorRunButton = document.getElementById("doctor-run");
+    const doctorStatusLine = document.getElementById("doctor-status-line");
+    const doctorResult = document.getElementById("doctor-result");
+
+    // Fills every field (missing values become empty), so old values never linger.
+    function fillDoctorForm(values) {
+      for (const [key, field] of Object.entries(doctorFields)) field.value = values[key] ?? "";
+    }
+
+    document.getElementById("doctor-sample").addEventListener("change", (event) => {
+      const sample = DOCTOR_SAMPLES[event.target.value];
+      if (!sample) return;
+      fillDoctorForm(sample);
+      doctorResult.textContent = "";
+      showMessage(doctorStatusLine, "Sample loaded. Click Diagnose.", "muted");
+    });
+
+    doctorForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      runDoctor();
+    });
+
+    // Fills the form (if values are given) and runs the diagnosis. Used by the board too.
+    async function runDoctor(values) {
+      if (values) fillDoctorForm(values);
+      const input = Object.fromEntries(Object.entries(doctorFields).map(([key, field]) => [key, field.value.trim()]));
+
+      doctorRunButton.disabled = true;
+      doctorResult.textContent = "";
+      showMessage(doctorStatusLine, "Diagnosing…", "muted");
+      try {
+        let res;
+        try {
+          res = await fetch("/.netlify/functions/diagnose", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(input),
+          });
+        } catch {
+          throw new Error("Couldn't reach the RepostRx server. Check your connection and try again.");
+        }
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error);
+        doctorStatusLine.textContent = "";
+        renderDiagnosis(data);
+      } catch (err) {
+        showMessage(doctorStatusLine, err.message, "error");
+      } finally {
+        doctorRunButton.disabled = false;
+      }
+    }
+
+    // Copies text to the clipboard; if that's blocked, selects it for Ctrl+C.
+    async function copyText(button, text, selectTarget) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = button.textContent;
+        button.textContent = "Copied ✓";
+        setTimeout(() => (button.textContent = original), 2000);
+      } catch {
+        selectTarget.focus();
+        if (selectTarget.select) selectTarget.select();
+        else window.getSelection().selectAllChildren(selectTarget);
+        button.textContent = "Selected: press Ctrl+C";
+      }
+    }
+
+    function addHeading(parent, text) {
+      const h = document.createElement("h4");
+      h.textContent = text;
+      parent.appendChild(h);
+    }
+
+    function renderDiagnosis(data) {
+      doctorResult.textContent = "";
+      const card = document.createElement("div");
+      card.className = "doctor-result";
+
+      const head = document.createElement("h3");
+      const badge = document.createElement("span");
+      if (data.needsDetails) {
+        badge.className = "badge needs";
+        badge.textContent = "Needs details";
+      } else if (data.source === "known") {
+        badge.className = "badge known";
+        badge.textContent = "Known cause";
+      } else if (data.source === "ai") {
+        badge.className = "badge ai";
+        badge.textContent = "AI suggestion — review before sending";
+      } else {
+        badge.className = "badge unknown";
+        badge.textContent = "Not a known cause yet";
+      }
+      head.append(badge, ` ${data.title}`);
+      card.appendChild(head);
+
+      // AI answers: say so, and show anything the server's checks flagged.
+      if (data.source === "ai") {
+        addLine(card, "Not from the known-causes list. Claude wrote this from the error alone; check every sentence before using it.", "warning");
+        if (data.enoughInfo === false) addLine(card, "Claude says there isn't enough information to be sure.", "warning");
+        for (const w of data.warnings ?? []) addLine(card, `⚠ ${w}`, "warning");
+      }
+      if (data.aiError) addLine(card, data.aiError, "muted");
+
+      if (data.raw) {
+        addHeading(card, "Raw error (keys redacted)");
+        const raw = document.createElement("div");
+        raw.className = "raw";
+        raw.textContent = data.raw;
+        card.appendChild(raw);
+      }
+
+      addHeading(card, "Cause");
+      addLine(card, data.cause);
+      addHeading(card, "Fix");
+      addLine(card, data.fix);
+
+      addHeading(card, "Customer reply");
+      if (data.reply) {
+        const replyBox = document.createElement("textarea");
+        replyBox.rows = 6;
+        replyBox.value = data.reply; // editable, so you can adjust it before copying
+        replyBox.setAttribute("aria-label", "Customer reply");
+        const copyReply = document.createElement("button");
+        copyReply.type = "button";
+        copyReply.textContent = "Copy reply";
+        copyReply.addEventListener("click", () => copyText(copyReply, replyBox.value, replyBox));
+        card.append(replyBox, copyReply);
+      } else {
+        addLine(card, data.needsDetails
+          ? "No reply yet: paste the full error, including details, so the right cause can be chosen."
+          : "No ready-made reply for this error.", "muted");
+      }
+
+      addHeading(card, "Internal note (for the support team)");
+      const note = document.createElement("div");
+      note.className = "raw";
+      note.textContent = data.internalNote;
+      const copyNote = document.createElement("button");
+      copyNote.type = "button";
+      copyNote.textContent = "Copy note";
+      copyNote.addEventListener("click", () => copyText(copyNote, data.internalNote, note));
+      card.append(note, copyNote);
+
+      doctorResult.appendChild(card);
+    }
 
     // ---------- Connected accounts (milestone 1) ----------
 
