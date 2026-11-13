@@ -1,4 +1,4 @@
-// POST /.netlify/functions/diagnose
+// POST /api/diagnose
 // body: { statusCode?, errorText?, postSubmissionId?, reqId?, symptom? }
 //   symptom: "" | "duplicate" | "not-published" | "stuck"
 // Post Doctor: matches a failed post or a pasted error against known causes
@@ -8,6 +8,15 @@
 // It never contacts Blotato and never creates, retries or deletes anything.
 
 import { requirePassword } from "../lib/auth.mjs";
+
+// Rate limit (Netlify, per IP address): a second layer behind the password, against
+// runaway loops or a leaked password spending Claude credits. Requests over the limit
+// get a 429 from Netlify before this function runs. Netlify requires a custom path
+// for rate limits, so this function lives at /api/diagnose (not /.netlify/functions/diagnose).
+export const config = {
+  path: "/api/diagnose",
+  rateLimit: { windowLimit: 20, windowSize: 60, aggregateBy: ["ip", "domain"] },
+};
 
 const MAX_INPUT_CHARS = 20000;
 const SYMPTOMS = ["", "duplicate", "not-published", "stuck"];

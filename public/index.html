@@ -190,6 +190,8 @@
       try {
         return await res.json();
       } catch {
+        // Netlify's rate limit answers 429 before our function runs, so it isn't our JSON.
+        if (res.status === 429) return { error: "Too many requests in a short time, so RepostRx paused them. Wait a minute and try again." };
         return { error: `The server sent an unexpected reply (status ${res.status}). Try again shortly.` };
       }
     }
@@ -369,7 +371,7 @@
     // Asks Claude for the three drafts and shows them in editable boxes.
     async function writeDrafts(article) {
       showMessage(importStatus, `Writing drafts from "${article.title}"…`);
-      const res = await api("/.netlify/functions/drafts", {
+      const res = await api("/api/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: article.text, url: article.url }),
@@ -1103,7 +1105,7 @@
       try {
         let res;
         try {
-          res = await api("/.netlify/functions/diagnose", {
+          res = await api("/api/diagnose", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(input),

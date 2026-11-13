@@ -152,6 +152,10 @@
 - Fix: the prompt now says the opener is added for it and gives examples of greetings not to write. As a backup, the server strips a leading "Hi"/"Thanks..." sentence before adding the opener ("Thanks to..." is kept, because that's an explanation, not a greeting).
 - Lesson (again): a prompt rule is a request. Enforce anything that matters in code.
 
+- 2026-11-13: Netlify Observability showed 38.89% errors in the first hour. All 14 were my own Test-Auth 401s (orange bar). Lesson: an error rate only means something once you know what caused it.
+
+- 2026-11-13: Expected 404 for the old diagnose address, got 405 (Method Not Allowed) locally. Not a 401, so the protected function isn't there; netlify dev's static server refuses POST. Lesson: read what a status code rules out, not just whether it matches.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.

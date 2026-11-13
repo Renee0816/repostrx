@@ -1,8 +1,17 @@
-// POST /.netlify/functions/drafts   body: { "text": "article text..." }
+// POST /api/drafts   body: { "text": "article text...", "url": "https://... (optional)" }
 // Asks Claude to write one draft each for LinkedIn, X and Facebook.
 // Returns { linkedin, x, facebook, warnings }. Nothing is posted anywhere.
 
 import { requirePassword } from "../lib/auth.mjs";
+
+// Rate limit (Netlify, per IP address): a second layer behind the password, against
+// runaway loops or a leaked password spending Claude credits. Requests over the limit
+// get a 429 from Netlify before this function runs. Netlify requires a custom path
+// for rate limits, so this function lives at /api/drafts (not /.netlify/functions/drafts).
+export const config = {
+  path: "/api/drafts",
+  rateLimit: { windowLimit: 10, windowSize: 60, aggregateBy: ["ip", "domain"] },
+};
 
 const CLAUDE_URL ="https://api.anthropic.com/v1/messages";
 const MODEL = "claude-haiku-5-5";
