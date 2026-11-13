@@ -159,7 +159,7 @@ How to answer:
 - title: a short label, at most 8 words.
 - cause: 1 to 2 sentences for the support engineer.
 - fix: 1 to 2 concrete steps for the support engineer.
-- reply: exactly 3 sentences to the customer: what happened, why, and what to do next. Warm, plain English, no jargon, no abbreviations like "e.g.". Don't start with a greeting or thanks (one is added automatically).
+- reply: exactly 3 sentences to the customer: what happened, why, and what to do next. Warm, plain English, no jargon, no abbreviations like "e.g.". The code adds "Thanks for reaching out!" in front of your reply, so your first sentence must go straight to what happened. Never open with a greeting or thanks (no "Hi", "Hello", "Thanks for reporting this", "Thank you for your patience").
 
 Never:
 - Guess or mention an account ID.
@@ -220,6 +220,16 @@ async function aiSuggest({ status, raw, symptom }) {
   } catch {
     return { error: "No AI suggestion: Claude's answer wasn't in the expected format. Try again." };
   }
+}
+
+// Backup for the prompt rule: removes leading greeting or thanks sentences, since
+// OPENER is added in front (otherwise: "Thanks for reaching out! Thanks for reporting this...").
+function stripGreeting(text) {
+  let s = text.trim();
+  // "thanks to ..." is a real explanation ("Thanks to a mismatch, ..."), so it's kept.
+  const greeting = /^(hi|hello|hey|dear|thanks(?!\s+to\b)|thank you)\b[^.!?]*[.!?]\s*/i;
+  while (greeting.test(s)) s = s.replace(greeting, "");
+  return s || text.trim(); // never return an empty reply
 }
 
 // Code checks on the AI's answer. A prompt rule is a request, not a guarantee.
@@ -333,7 +343,7 @@ export default async (req) => {
   // Not in the known list: ask the AI for a suggestion, clearly labelled.
   const ai = await aiSuggest({ status, raw, symptom });
   if (ai.suggestion) {
-    const s = ai.suggestion;
+    const s = { ...ai.suggestion, reply: stripGreeting(ai.suggestion.reply) };
     const warnings = checkSuggestion(s, `${status ?? ""} ${raw}`);
     return reply(200, {
       source: "ai",
