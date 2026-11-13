@@ -23,6 +23,18 @@
     .confirm-text { white-space: pre-wrap; background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; }
     .confirm button { margin-right: 0.5rem; }
     .success { color: #1b6e20; font-weight: 600; }
+    input[type="text"] { font-size: 1rem; padding: 0.5rem; width: 100%; box-sizing: border-box; margin-bottom: 0.5rem; font-family: ui-monospace, monospace; }
+    #board-list { list-style: none; padding: 0; }
+    .post { border: 1px solid #ddd; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+    .post p { margin: 0.25rem 0; }
+    .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; background: #e6e6ea; color: #333; }
+    .badge.scheduled { background: #e3ecfb; color: #1a4d99; }
+    .badge.published { background: #e2f3e4; color: #1b6e20; }
+    .badge.failed { background: #fbe4e6; color: #b00020; }
+    .badge.in-progress { background: #fff1d6; color: #8a5300; }
+    .badge.stuck { background: #fbe4e6; color: #b00020; }
+    #version { margin-top: 3rem; padding-top: 0.75rem; border-top: 1px solid #eee; font-size: 0.8rem; color: #888; }
+    .post button { font-size: 0.85rem; padding: 0.25rem 0.6rem; }
   </style>
 </head>
 <body>
@@ -67,16 +79,29 @@
     <div class="schedule" id="schedule-facebook" aria-live="polite"></div>
   </section>
 
-  <section id="scheduled" hidden>
-    <h2>Scheduled this session</h2>
-    <ul id="scheduled-log"></ul>
+  <section id="board">
+    <h2>Your posts</h2>
+    <p class="muted">Saved in this browser only. Statuses come from Blotato.</p>
+    <button id="board-refresh" type="button">Refresh statuses</button>
+    <form id="add-post-form">
+      <label for="add-post-id">Add an existing post by its postSubmissionId</label>
+      <input id="add-post-id" type="text" placeholder="5556c419-cb7f-44be-b26c-94010e8126b5" autocomplete="off" spellcheck="false">
+      <button id="add-post-button" type="submit">Add post</button>
+    </form>
+    <div id="board-status" aria-live="polite"></div>
+    <p id="board-empty" class="muted">No posts yet. Schedule a draft, or add a post by its ID.</p>
+    <ul id="board-list"></ul>
   </section>
+
 
   <section>
     <h2>Connected accounts</h2>
     <button id="load">Load my accounts</button>
     <div id="result" aria-live="polite"></div>
   </section>
+
+  <!-- VERSION: update this line each milestone. It shows which page version the tab is running. -->
+  <footer id="version">RepostRx · milestone 4 · 2026-11-13</footer>
 
   <script>
     // ---------- Shared helpers ----------
@@ -518,15 +543,21 @@
         id.textContent = `postSubmissionId: ${data.postSubmissionId}`;
         const hint = document.createElement("p");
         hint.className = "muted";
-        hint.textContent = "To change or cancel it, use my.blotato.com. Editing the draft here won't change the scheduled post.";
+        hint.textContent = "Added to Your posts below. To change or cancel it, use my.blotato.com. Editing the draft here won't change the scheduled post.";
         box.append(done, id, hint);
         textarea.readOnly = true;
 
-        // Keep a record that survives importing a new article.
-        const item = document.createElement("li");
-        item.textContent = `${name} · ${accountLabel(snapshot.account)} · ${when} · postSubmissionId ${data.postSubmissionId}`;
-        document.getElementById("scheduled-log").appendChild(item);
-        document.getElementById("scheduled").hidden = false;
+        // Save it to the "Your posts" board (kept across page refreshes), with no
+        // status yet, then let a normal check fill in what Blotato itself reports.
+        const flat = snapshot.text.replace(/\s+/g, " ");
+        savePostToBoard({
+          id: data.postSubmissionId,
+          platformName: name,
+          accountLabel: accountLabel(snapshot.account),
+          snippet: flat.length > 80 ? `${flat.slice(0, 80)}…` : flat,
+          scheduledTime: at.toISOString(),
+        });
+        refreshBoard({ quiet: true });
       }
     }
 
@@ -540,6 +571,266 @@
       xCount.classList.toggle("over", length > X_LIMIT);
     }
     xBox.addEventListener("input", updateXCount);
+
+    // ---------- "Your posts" board (milestone 4) ----------
+    // Post IDs are remembered in this browser's localStorage: simple and private,
+    // but only on this browser and computer. Only loadPosts/savePosts touch storage,
+    // so moving to server storage later means changing just those two.
+
+    const STORAGE_KEY = "repostrx.posts.v1"; // versioned in case the saved format changes
+    const POST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const BADGES = { scheduled: "Scheduled", published: "Published", failed: "Failed", "in-progress": "In progress" };
+    const FINAL_STATUSES = ["published", "failed"]; // these never change, so we don't recheck them
+    const STUCK_MINUTES = 10;
+    const CHECK_SPACING_MS = 1100; // at most ~55 checks a minute, under Blotato's limit of 60
+    const boardList = document.getElementById("board-list");
+    const boardStatus = document.getElementById("board-status");
+
+    function loadPosts() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+        return Array.isArray(saved) ? saved.filter((p) => p && typeof p.id === "string") : [];
+      } catch {
+        return []; // storage blocked or unreadable: start with an empty board
+      }
+    }
+
+    let storageWarned = false;
+    function savePosts() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+      } catch {
+        if (!storageWarned) {
+          storageWarned = true;
+          showMessage(boardStatus, "This browser isn't letting RepostRx save your posts (for example in a private window), so the board will be empty after a refresh.", "warning");
+        }
+      }
+    }
+
+    let posts = loadPosts();
+
+    // Asks our read-only post-status function about one post. Throws with a plain-English message.
+    // Every status check (Refresh, add-by-ID, page load) goes through here, so they
+    // all share one pace. The slot is reserved before waiting, so two checks
+    // started at the same moment can't take the same slot.
+    let nextCheckAt = 0;
+    async function fetchStatus(id) {
+      const slot = Math.max(Date.now(), nextCheckAt);
+      nextCheckAt = slot + CHECK_SPACING_MS;
+      if (slot > Date.now()) await wait(slot - Date.now());
+
+      let res;
+      try {
+        res = await fetch(`/.netlify/functions/post-status?id=${encodeURIComponent(id)}`);
+      } catch {
+        throw new Error("Couldn't reach the RepostRx server. Check your connection and try again.");
+      }
+      const data = await readJson(res);
+      if (!res.ok) {
+        const err = new Error(data.error);
+        err.status = res.status; // lets Refresh stop early on 429 (too many checks)
+        throw err;
+      }
+      return data;
+    }
+
+    // Minutes a post has been stuck in progress, or null if it isn't stuck.
+    // Counted from the scheduled time, or (if there is none) from when we first saw it in progress.
+    function stuckMinutes(post) {
+      if (post.status !== "in-progress") return null;
+      const start = new Date(post.scheduledTime ?? post.inProgressSince).getTime();
+      if (Number.isNaN(start)) return null;
+      const minutes = Math.floor((Date.now() - start) / 60000);
+      return minutes >= STUCK_MINUTES ? minutes : null;
+    }
+
+    // Copies a status check into a saved post, and notes when it was first seen in progress
+    // (used to flag posts that stay in progress too long).
+    function applyStatus(post, data) {
+      post.status = data.status;
+      post.summary = data.summary;
+      post.scheduledTime = data.scheduledTime;
+      post.publicUrl = data.publicUrl;
+      post.errorMessage = data.errorMessage;
+      post.lastChecked = new Date().toISOString();
+      delete post.checkError; // this check worked
+      if (data.status === "in-progress") post.inProgressSince ??= post.lastChecked;
+      else delete post.inProgressSince;
+    }
+
+    // Adds a post to the board, or updates it if it's already there.
+    function savePostToBoard(fields) {
+      const existing = posts.find((p) => p.id === fields.id);
+      if (existing) Object.assign(existing, fields);
+      else posts.push({ addedAt: new Date().toISOString(), ...fields });
+      savePosts();
+      renderBoard();
+    }
+
+    function isHttpsUrl(value) {
+      try {
+        return new URL(value).protocol === "https:";
+      } catch {
+        return false;
+      }
+    }
+
+    function addLine(parent, text, className = "") {
+      const p = document.createElement("p");
+      if (className) p.className = className;
+      p.textContent = text;
+      parent.appendChild(p);
+      return p;
+    }
+
+    function renderBoard() {
+      boardList.textContent = "";
+      document.getElementById("board-empty").hidden = posts.length > 0;
+
+      const newestFirst = [...posts].sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""));
+      for (const post of newestFirst) {
+        const li = document.createElement("li");
+        li.className = "post";
+
+        const head = document.createElement("p");
+        const stuck = stuckMinutes(post);
+        const badge = document.createElement("span");
+        badge.className = `badge ${stuck !== null ? "stuck" : post.status ?? ""}`;
+        badge.textContent = stuck !== null ? "⚠ Check" : BADGES[post.status] ?? "Not checked yet";
+        const title = document.createElement("strong");
+        title.textContent = ` ${post.platformName ?? "Post"}${post.accountLabel ? ` · ${post.accountLabel}` : ""}`;
+        head.append(badge, title);
+        li.appendChild(head);
+
+        if (post.snippet) addLine(li, `"${post.snippet}"`, "muted");
+
+        addLine(li, post.scheduledTime
+          ? `Scheduled time: ${formatLocal(new Date(post.scheduledTime))}`
+          : post.status === "published" ? "Published immediately (no scheduled time)." : "No scheduled time.");
+
+        if (stuck !== null) {
+          addLine(li, `⚠ Still in progress after ${stuck} minutes. This can mean Blotato has no record of this ID. Check my.blotato.com.`, "error");
+        } else if (post.summary) {
+          addLine(li, post.summary, post.status === "failed" ? "error" : "");
+        }
+        if (post.checkError) addLine(li, `Last check failed: ${post.checkError}`, "warning");
+
+        if (post.status === "published" && isHttpsUrl(post.publicUrl)) {
+          const link = document.createElement("a");
+          link.href = post.publicUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer"; // the new tab can't control this page
+          link.textContent = "View live post ↗";
+          const p = document.createElement("p");
+          p.appendChild(link);
+          li.appendChild(p);
+        }
+
+        addLine(li, `ID ${post.id}${post.lastChecked ? ` · last checked ${new Date(post.lastChecked).toLocaleString()}` : ""}`, "muted");
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove from board";
+        remove.title = "Only removes it from this list. Nothing changes in Blotato.";
+        remove.addEventListener("click", () => {
+          posts = posts.filter((p) => p.id !== post.id);
+          savePosts();
+          renderBoard();
+          showMessage(boardStatus, "Removed from your board. The post itself is unchanged in Blotato.", "muted");
+        });
+        li.appendChild(remove);
+
+        boardList.appendChild(li);
+      }
+    }
+
+    // Add an existing post by ID: check the format, then look it up once before adding.
+    const addForm = document.getElementById("add-post-form");
+    const addInput = document.getElementById("add-post-id");
+    const addButton = document.getElementById("add-post-button");
+
+    addForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const id = addInput.value.trim().toLowerCase();
+      if (!POST_ID_PATTERN.test(id)) {
+        return showMessage(boardStatus, "That doesn't look like a Blotato post ID. It should look like 5556c419-cb7f-44be-b26c-94010e8126b5.", "error");
+      }
+      if (posts.some((p) => p.id === id)) {
+        return showMessage(boardStatus, "That post is already on your board.", "muted");
+      }
+
+      addButton.disabled = true;
+      showMessage(boardStatus, "Checking that post with Blotato…", "muted");
+      try {
+        const data = await fetchStatus(id);
+        const post = { id, platformName: "Added by ID" };
+        applyStatus(post, data);
+        savePostToBoard(post);
+        addInput.value = "";
+        if (data.status === "in-progress") {
+          showMessage(boardStatus, "Added, but it shows as in progress, which can also mean Blotato has no record of this ID. Double-check the ID.", "warning");
+        } else {
+          showMessage(boardStatus, "Added to your board.", "muted");
+        }
+      } catch (err) {
+        showMessage(boardStatus, `Not added: ${err.message || "couldn't reach the RepostRx server."}`, "error");
+      } finally {
+        addButton.disabled = false;
+      }
+    });
+
+    // Refresh: recheck every post that can still change, one at a time (fetchStatus sets the pace).
+    const refreshButton = document.getElementById("board-refresh");
+    let refreshing = false;
+
+    async function refreshBoard({ quiet = false } = {}) {
+      if (refreshing) return;
+      const toCheck = posts.filter((p) => !FINAL_STATUSES.includes(p.status));
+      if (toCheck.length === 0) {
+        if (!quiet) showMessage(boardStatus, posts.length ? "Every post is published or failed, so there's nothing to recheck." : "No posts to check yet.", "muted");
+        return;
+      }
+
+      refreshing = true;
+      refreshButton.disabled = true;
+      let failed = 0;
+      let stoppedEarly = false;
+      try {
+        for (let i = 0; i < toCheck.length; i++) {
+          showMessage(boardStatus, `Checking ${i + 1} of ${toCheck.length}…`, "muted");
+          const post = toCheck[i];
+          try {
+            applyStatus(post, await fetchStatus(post.id));
+          } catch (err) {
+            failed++;
+            post.checkError = err.message;
+            if (err.status === 429) {
+              stoppedEarly = true;
+              break;
+            }
+          } finally {
+            savePosts();
+            renderBoard();
+          }
+        }
+      } finally {
+        refreshing = false;
+        refreshButton.disabled = false;
+      }
+
+      if (stoppedEarly) {
+        showMessage(boardStatus, "Stopped early: Blotato says we're checking too often. Wait a minute, then refresh again.", "error");
+      } else if (failed) {
+        showMessage(boardStatus, `Checked ${toCheck.length} posts. ${failed} couldn't be checked (see "Last check failed" below).`, "warning");
+      } else {
+        showMessage(boardStatus, `Up to date as of ${new Date().toLocaleTimeString()}.`, "muted");
+      }
+    }
+
+    refreshButton.addEventListener("click", () => refreshBoard());
+
+    renderBoard();               // show saved posts as soon as the page loads…
+    refreshBoard({ quiet: true }); // …then check the ones that can still change
 
     // ---------- Connected accounts (milestone 1) ----------
 
