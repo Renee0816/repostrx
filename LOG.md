@@ -156,6 +156,16 @@
 
 - 2026-11-13: Expected 404 for the old diagnose address, got 405 (Method Not Allowed) locally. Not a 401, so the protected function isn't there; netlify dev's static server refuses POST. Lesson: read what a status code rules out, not just whether it matches.
 
+## 2026-11-13: Rate limit looked broken, but wasn't
+- Setup: Netlify code-based rate limits on /api/diagnose (20/min per IP) and /api/drafts (10/min per IP). Netlify requires a custom path for rate limits, so both moved off /.netlify/functions/.
+- First tests (25, 25, 60 requests) returned only 401, no 429.
+- Checked: config matched Netlify's docs; deploy log said "Processed 2 programmatic custom rate limiting rules".
+- Stopwatch test measured the speed: 60 requests in 8.5 s (422/min) → 401 x 37, 429 x 23. Enforced.
+- Why some got through: Netlify can take up to 10 s to start blocking.
+- Why earlier runs showed none: unclear, possibly the rule activating after deploy.
+- Lesson: measure the test itself (speed, timing) before blaming the system.
+- Note: this is a second layer. The password check refuses unauthenticated requests before any Claude call, even when requests get through the rate limit.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.
