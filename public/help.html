@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepostRx Help</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+    section { margin-top: 2.5rem; }
+    h2 { border-bottom: 1px solid #eee; padding-bottom: 0.25rem; }
+    h3 { margin-bottom: 0.25rem; }
+    .muted { color: #555; }
+    .back { font-size: 0.95rem; }
+    .checklist { list-style: none; padding: 0; counter-reset: step; }
+    .checklist li { counter-increment: step; margin: 0.5rem 0; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; }
+    .checklist label { display: flex; gap: 0.6rem; align-items: flex-start; cursor: pointer; }
+    .checklist input { margin-top: 0.35rem; flex-shrink: 0; width: 1.1rem; height: 1.1rem; }
+    .checklist label::before { content: counter(step) "."; font-weight: 600; min-width: 1.4rem; }
+    .note { padding: 0.6rem 0.8rem; border-left: 4px solid #1a4d99; background: #f1f5fc; border-radius: 4px; }
+    .warn { padding: 0.6rem 0.8rem; border-left: 4px solid #8a5300; background: #fff8e6; border-radius: 4px; }
+    .badge { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; background: #e6e6ea; color: #333; white-space: nowrap; }
+    .badge.scheduled { background: #e3ecfb; color: #1a4d99; }
+    .badge.published { background: #e2f3e4; color: #1b6e20; }
+    .badge.failed, .badge.stuck { background: #fbe4e6; color: #b00020; }
+    .badge.amber { background: #fff1d6; color: #8a5300; }
+    dl { margin: 0.5rem 0; }
+    dt { font-weight: 600; margin-top: 0.75rem; }
+    dd { margin-left: 0; }
+    .button-name { font-weight: 600; }
+    kbd { font-family: inherit; font-size: 0.9em; padding: 0.05rem 0.35rem; border: 1px solid #ccc; border-bottom-width: 2px; border-radius: 4px; background: #fafafa; }
+    nav ul { padding-left: 1.2rem; }
+    footer { margin-top: 3rem; padding-top: 0.75rem; border-top: 1px solid #eee; font-size: 0.8rem; color: #888; }
+  </style>
+</head>
+<body>
+  <p class="back"><a href="/">← Back to RepostRx</a></p>
+  <h1>RepostRx help</h1>
+  <p>RepostRx turns an article you wrote into social media posts for LinkedIn and X, and schedules them for you. You stay in control: nothing is posted until you check it and confirm.</p>
+
+  <!-- ============ Onboarding checklist ============ -->
+  <section id="start">
+    <h2>Your first 10 minutes</h2>
+    <p class="muted">Tick each step as you go. (The ticks are just for you; they aren't saved.)</p>
+    <ol class="checklist">
+      <li><label><input type="checkbox"> <span><strong>Have your RepostRx password ready.</strong> You get it from whoever set up RepostRx for you. Keep it in your password manager.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Open RepostRx and sign in.</strong> Type the password and click <span class="button-name">Sign in</span>. You'll see "Signed in on this browser."</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Check your accounts.</strong> At the bottom of the page, click <span class="button-name">Load my accounts</span>. Your LinkedIn or X account should be listed. If it isn't, connect it at my.blotato.com first.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Import an article.</strong> Paste the link to one of your articles and click <span class="button-name">Import</span>. It can take up to a minute or two. If it says it couldn't find the article text (common with Substack), <a href="#import">paste the text instead</a>.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Read and edit the drafts.</strong> RepostRx writes a LinkedIn, an X and a Facebook draft in your voice. Change anything you like.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Pick a time.</strong> For your first post, choose a time tomorrow, so you have time to double-check it. It must be at least 5 minutes from now.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Schedule it.</strong> Click <span class="button-name">Schedule LinkedIn post…</span>, read the summary (account, time and text), then click <span class="button-name">Confirm and schedule</span>. Click it once.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Find it under "Your posts".</strong> It should show a blue <span class="badge scheduled">Scheduled</span> badge with the time you picked.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Try Post Doctor once.</strong> Under Post Doctor, choose a sample from the list and click <span class="button-name">Diagnose</span>, so you know what it looks like before you ever need it.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Bookmark this help page.</strong> The <a href="/">RepostRx</a> page links to it at the top. If something goes wrong, see <a href="#problems">Common problems</a> at the bottom of this page.</span></label></li>
+    </ol>
+  </section>
+
+  <nav aria-label="On this page">
+    <h2>On this page</h2>
+    <ul>
+      <li><a href="#what">What RepostRx does</a></li>
+      <li><a href="#signin">Signing in</a></li>
+      <li><a href="#import">Importing an article</a></li>
+      <li><a href="#drafts">Your drafts</a></li>
+      <li><a href="#schedule">Scheduling a post</a></li>
+      <li><a href="#board">The "Your posts" board</a></li>
+      <li><a href="#doctor">Post Doctor</a></li>
+      <li><a href="#email">The daily email report</a></li>
+      <li><a href="#problems">Common problems</a></li>
+    </ul>
+  </nav>
+
+  <!-- ============ Sections ============ -->
+  <section id="what">
+    <h2>What RepostRx does</h2>
+    <p>You write an article once. RepostRx helps you share it:</p>
+    <ol>
+      <li>It <strong>reads your article</strong> from its link (or from text you paste).</li>
+      <li>It <strong>writes draft posts</strong> for LinkedIn, X and Facebook, in your voice, with a link back to the article.</li>
+      <li>You <strong>edit and schedule</strong> the drafts for the day and time you choose.</li>
+      <li>It <strong>keeps track</strong> of your posts, and explains in plain English if one fails.</li>
+    </ol>
+    <p>The posting itself is done by <strong>Blotato</strong>, a scheduling service connected to your social accounts. You'll see its name in a few places; my.blotato.com is where your accounts and scheduled posts live.</p>
+  </section>
+
+  <section id="signin">
+    <h2>Signing in</h2>
+    <p>RepostRx is protected by one password, so strangers can't use it to post to your accounts.</p>
+    <ul>
+      <li>Type the password at the top of the page and click <span class="button-name">Sign in</span>.</li>
+      <li>RepostRx <strong>remembers you on this browser</strong>, so you won't need to sign in again on the same computer.</li>
+      <li>On a shared or borrowed computer, click <span class="button-name">Sign out</span> when you're done. That makes the browser forget the password.</li>
+      <li>Never send the password by email or text. If you think someone else has it, ask whoever set up RepostRx to change it.</li>
+    </ul>
+  </section>
+
+  <section id="import">
+    <h2>Importing an article</h2>
+    <p>Under <strong>1. Import an article</strong>, paste the article's web address (it starts with https://) and click <span class="button-name">Import</span>. RepostRx shows its progress, then writes your drafts automatically.</p>
+    <h3>If the import doesn't work: paste the text instead</h3>
+    <p>Some websites, including <strong>Substack</strong>, don't let RepostRx read the article itself; it only sees the page's menus and buttons. When that happens, RepostRx tells you so instead of writing drafts about nothing.</p>
+    <ol>
+      <li>Open your article, select all of its text, and copy it.</li>
+      <li>Paste it into <strong>Or paste the article text</strong>.</li>
+      <li>Paste the article's address into <strong>Article link</strong> (optional, but recommended: it's added to each draft so readers can find the full article).</li>
+      <li>Click <span class="button-name">Write drafts from pasted text</span>.</li>
+    </ol>
+  </section>
+
+  <section id="drafts">
+    <h2>Your drafts</h2>
+    <p>Under <strong>2. Edit your drafts</strong> you'll find three drafts. They're written by AI, so <strong>always read them</strong> before scheduling: check names, numbers and anything that sounds unlike you.</p>
+    <dl>
+      <dt>LinkedIn</dt>
+      <dd>A few short paragraphs, ending with a question or takeaway.</dd>
+      <dt>X</dt>
+      <dd>One short post. X allows <strong>280 characters</strong>; the counter under the box turns red if you go over. Links count as 23 characters, however long they really are.</dd>
+      <dt>Facebook</dt>
+      <dd>A friendly draft you can copy and post yourself. RepostRx can't schedule to Facebook yet.</dd>
+    </dl>
+    <p>If you imported from a link, the link is already at the end of each draft.</p>
+  </section>
+
+  <section id="schedule">
+    <h2>Scheduling a post</h2>
+    <div class="note"><strong>Nothing is posted until you confirm.</strong> RepostRx always shows you a summary first, and only schedules the post after you click <span class="button-name">Confirm and schedule</span>.</div>
+    <ol>
+      <li>Under each draft, check <strong>Posts to</strong>: the account the post will go to.</li>
+      <li>Choose <strong>When to post</strong>. Times are in <strong>your computer's time zone</strong>, and must be at least 5 minutes from now.</li>
+      <li>Click <span class="button-name">Schedule LinkedIn post…</span> (or <span class="button-name">Schedule X post…</span>).</li>
+      <li>Read the summary: account, time and the exact text.</li>
+      <li>Click <span class="button-name">Confirm and schedule</span> once, or <span class="button-name">Cancel</span> to go back.</li>
+    </ol>
+    <p>You'll see <strong>Scheduled ✓</strong> with the time, and the post is added to <strong>Your posts</strong>.</p>
+    <div class="warn">
+      <strong>After scheduling:</strong> editing the draft in RepostRx does <em>not</em> change the scheduled post. To change the text or time, or to cancel, go to my.blotato.com. Scheduling the same draft twice creates two posts.
+    </div>
+  </section>
+
+  <section id="board">
+    <h2>The "Your posts" board</h2>
+    <p>Every post you schedule appears here, with its current status from Blotato. RepostRx checks the statuses when you open the page; click <span class="button-name">Refresh statuses</span> to check again.</p>
+    <dl>
+      <dt><span class="badge scheduled">Scheduled</span></dt>
+      <dd>Waiting for its time. Nothing to do.</dd>
+      <dt><span class="badge published">Published</span></dt>
+      <dd>It's live. Click <strong>View live post ↗</strong> to see it.</dd>
+      <dt><span class="badge amber">In progress</span></dt>
+      <dd>Blotato is posting it right now. This usually takes a minute or two.</dd>
+      <dt><span class="badge stuck">⚠ Check</span></dt>
+      <dd>Still "in progress" after 10 minutes. Look for the post at my.blotato.com, or click <span class="button-name">Diagnose</span>.</dd>
+      <dt><span class="badge failed">Failed</span></dt>
+      <dd>The post didn't go out. Click <span class="button-name">Diagnose</span> to find out why.</dd>
+    </dl>
+    <h3>Good to know</h3>
+    <ul>
+      <li>The board is <strong>saved in this browser only</strong>. On another computer or browser it starts empty, but your posts are still scheduled.</li>
+      <li><span class="button-name">Remove from board</span> only removes the card from RepostRx. It does <em>not</em> delete or cancel the post.</li>
+      <li>To add a post that isn't on the board, paste the post's ID into <strong>Add an existing post</strong>. That's the long code RepostRx showed when you scheduled it (labelled "postSubmissionId"), made of letters, numbers and dashes.</li>
+      <li>The <span class="button-name">Add a sample…</span> buttons add practice cards marked SAMPLE. They aren't real posts; remove them when you're done.</li>
+    </ul>
+  </section>
+
+  <section id="doctor">
+    <h2>Post Doctor</h2>
+    <p>Post Doctor explains why a post failed, in plain English, and suggests what to do. It only explains; it never posts, retries or deletes anything.</p>
+    <h3>Using it</h3>
+    <ul>
+      <li><strong>From the board:</strong> click <span class="button-name">Diagnose</span> on a <span class="badge failed">Failed</span> or <span class="badge stuck">⚠ Check</span> card. Post Doctor fills itself in and shows the answer.</li>
+      <li><strong>From an error message:</strong> paste the error into <strong>Error</strong>, add the status code if you have it (a number like 401 or 422), and click <span class="button-name">Diagnose</span>.</li>
+      <li><strong>No error, just a problem?</strong> Choose a <strong>Symptom</strong>, such as "Post went out twice".</li>
+    </ul>
+    <h3>Reading the answer</h3>
+    <dl>
+      <dt><span class="badge published">Known cause</span></dt>
+      <dd>A problem RepostRx has seen before, with a tested explanation and fix.</dd>
+      <dt><span class="badge amber">Needs details</span></dt>
+      <dd>There are two possible causes. Paste the full error (including its "details" part) so Post Doctor can tell which.</dd>
+      <dt><span class="badge amber">AI suggestion — review before sending</span></dt>
+      <dd>A new problem. AI wrote this answer from the error alone, so read every sentence and check any warnings before using it.</dd>
+    </dl>
+    <p>Each answer has a <strong>customer reply</strong> you can edit and copy, and an <strong>internal note</strong> for whoever handles support.</p>
+    <p class="muted">Don't paste passwords or keys into Post Doctor. If one slips in, Post Doctor hides it before doing anything else.</p>
+  </section>
+
+  <section id="email">
+    <h2>The daily email report</h2>
+    <p>If your RepostRx is set up with the daily report, you get an email <strong>every morning at 8 AM (Pacific time)</strong>, even on quiet days, so you know the check ran.</p>
+    <dl>
+      <dt>"RepostRx daily report: 0 failed, 0 overdue"</dt>
+      <dd>All good. The email lists what was published in the last 24 hours and what's coming up this week.</dd>
+      <dt>"⚠ RepostRx daily report: 1 failed, 0 overdue"</dt>
+      <dd>Something needs a look. The email shows each problem post's time, account and error. Paste the error into Post Doctor.</dd>
+      <dt>Overdue</dt>
+      <dd>A post that should have gone out more than 10 minutes ago but is still waiting. Check it at my.blotato.com.</dd>
+      <dt>"⚠ RepostRx daily report couldn't run"</dt>
+      <dd>The check itself didn't work, so <strong>this is not an all-clear</strong>. Tell whoever set up RepostRx.</dd>
+    </dl>
+    <p class="muted">The email numbers posts the way Blotato does (for example "Blotato post 1234567"). That's a different code from the one on your board, so match posts by their date and time.</p>
+  </section>
+
+  <section id="problems">
+    <h2>Common problems</h2>
+    <dl>
+      <dt>"Wrong or missing RepostRx password"</dt>
+      <dd>Check you're using the current password, with no extra spaces. If you have more than one saved password for RepostRx, delete the old one so your browser can't fill in the wrong one.</dd>
+
+      <dt>Something is missing, or looks different from this guide</dt>
+      <dd>Your browser may be showing an old copy of the page. Press <kbd>F5</kbd> (or <kbd>Ctrl</kbd> + <kbd>R</kbd>; on a Mac, <kbd>⌘</kbd> + <kbd>R</kbd>) to reload it. The version line at the bottom of the RepostRx page shows which version you're on.</dd>
+
+      <dt>"The imported page didn't include the article itself"</dt>
+      <dd>The website (often Substack) only showed RepostRx its menus. Use <a href="#import">paste the text instead</a>.</dd>
+
+      <dt>The X counter is red</dt>
+      <dd>The X draft is over 280 characters, so RepostRx won't schedule it. Shorten it until the counter is back to normal. Remember that the link counts as 23 characters.</dd>
+    </dl>
+    <p>Still stuck? Copy the exact message you see and send it, with the time it happened, to whoever set up RepostRx.</p>
+  </section>
+
+  <footer>RepostRx help · milestone 6 · <a href="/">Back to RepostRx</a></footer>
+</body>
+</html>

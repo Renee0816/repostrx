@@ -6,7 +6,7 @@ import { requirePassword } from "../lib/auth.mjs";
 
 const BLOTATO_URL ="https://backend.blotato.com/v2/posts/";
 
-// Blotato's postSubmissionIds are UUIDs, e.g. 5556c419-cb7f-44be-b26c-94010e8126b5.
+// Blotato's postSubmissionIds are UUIDs, e.g. 1a2b3c4d-1234-4abc-8def-0123456789ab (made-up example).
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Plain-English explanations for errors we expect from Blotato.
@@ -46,10 +46,10 @@ export default async (req) => {
 
   const id = new URL(req.url).searchParams.get("id")?.trim() ?? "";
   if (!id) {
-    return reply(400, { error: "Add the post ID to the address, like ?id=5556c419-..." });
+    return reply(400, { error: "Add the post ID to the address, like ?id=1a2b3c4d-..." });
   }
   if (!ID_PATTERN.test(id)) {
-    return reply(400, { error: "That doesn't look like a Blotato post ID. It should look like 5556c419-cb7f-44be-b26c-94010e8126b5." });
+    return reply(400, { error: "That doesn't look like a Blotato post ID. It should look like 1a2b3c4d-1234-4abc-8def-0123456789ab." });
   }
 
   const apiKey = process.env.BLOTATO_API_KEY;

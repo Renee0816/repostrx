@@ -49,7 +49,7 @@
 </head>
 <body>
   <h1>RepostRx</h1>
-  <p>Turn an article into scheduled social posts.</p>
+  <p>Turn an article into scheduled social posts. <a href="help.html">Help and getting started</a></p>
 
   <!-- Sign-in: the app password is typed here and remembered in this browser only. -->
   <section id="signin">
@@ -115,7 +115,7 @@
     </p>
     <form id="add-post-form">
       <label for="add-post-id">Add an existing post by its postSubmissionId</label>
-      <input id="add-post-id" type="text" placeholder="5556c419-cb7f-44be-b26c-94010e8126b5" autocomplete="off" spellcheck="false">
+      <input id="add-post-id" type="text" placeholder="1a2b3c4d-1234-4abc-8def-0123456789ab" autocomplete="off" spellcheck="false">
       <button id="add-post-button" type="submit">Add post</button>
     </form>
     <div id="board-status" aria-live="polite"></div>
@@ -175,7 +175,7 @@
   </section>
 
   <!-- VERSION: update this line each milestone. It shows which page version the tab is running. -->
-  <footer id="version">RepostRx · milestone 5 · 2026-11-13</footer>
+  <footer id="version">RepostRx · milestone 6 · 2026-11-14</footer>
 
   <script>
     // ---------- Shared helpers ----------
@@ -913,7 +913,7 @@
       event.preventDefault();
       const id = addInput.value.trim().toLowerCase();
       if (!POST_ID_PATTERN.test(id)) {
-        return showMessage(boardStatus, "That doesn't look like a Blotato post ID. It should look like 5556c419-cb7f-44be-b26c-94010e8126b5.", "error");
+        return showMessage(boardStatus, "That doesn't look like a Blotato post ID. It should look like 1a2b3c4d-1234-4abc-8def-0123456789ab.", "error");
       }
       if (posts.some((p) => p.id === id)) {
         return showMessage(boardStatus, "That post is already on your board.", "muted");
