@@ -166,6 +166,16 @@
 - Lesson: measure the test itself (speed, timing) before blaming the system.
 - Note: this is a second layer. The password check refuses unauthenticated requests before any Claude call, even when requests get through the rate limit.
 
+## 2026-11-14: n8n daily failure report
+
+- What it does: every day at 8 AM Pacific, one read-only call to Blotato's GET /v2/posts (7 days back to 7 days ahead) and an email: failed in the last 24 hours, overdue, published, coming up. It sends every day, including "0 failed, 0 overdue", because silence can't tell "all fine" from "workflow stopped". If the Blotato call or the report step fails, a separate "couldn't run" email goes out instead.
+- Finding: Blotato's post list uses numeric ids (like 6855189), not the postSubmissionId. Neither of my postSubmissionIds appeared in the list. The report identifies posts by time, account and Blotato post number; the time is the link to the RepostRx board.
+- "Overdue" = still scheduled more than 10 minutes past its post time. That's different from in-progress: the list only has scheduled, published and failed, so the report can't see "in-progress" at all.
+- Testing: pinned data on the HTTP node for fake failed and overdue posts (no real post had to fail); a bad URL (/v2/postsx) to test the error email, then changed back. Pinned data only affects manual runs, not scheduled ones, but unpin it after testing anyway.
+- n8n gotchas: the canvas showed a stale pin icon after unpinning (fixed with save + F5). Delete removes a selected node; Ctrl+Z undoes it.
+- The workflow file in the repo (n8n/daily-report.json) is my template, not an n8n export: no email address, no credential IDs, no keys. An export would include those.
+- After-trial plan: the n8n trial ends ~Nov 24. Decide by Nov 21: export the workflow (free self-hosted n8n can import it) or pay for Starter monthly. Afterwards, remove n8n's Google access (Google Account > Security > Third-party connections) if I stop using it.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.

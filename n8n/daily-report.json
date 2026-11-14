@@ -1,0 +1,114 @@
+{
+  "name": "RepostRx daily report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "name": "Every day at 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "name": "Manual test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://backend.blotato.com/v2/posts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $now.minus({ days: 7 }).toUTC().toISO() }}" },
+            { "name": "until", "value": "={{ $now.plus({ days: 7 }).toUTC().toISO() }}" },
+            { "name": "limit", "value": "250" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "List posts (Blotato)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 100],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// RepostRx daily report: sorts Blotato's post list (from the HTTP node) into a plain-text email.\n// Read-only: it only reads the answer it's given. It never creates or changes posts.\nconst SITE = 'https://repostrx-renee.netlify.app';\nconst OVERDUE_MINUTES = 10;\nconst DAY_MS = 24 * 60 * 60 * 1000;\nconst now = Date.now();\n\nconst answer = $input.first().json;\nif (!Array.isArray(answer.items)) {\n  // Unexpected shape: stop with an error so the \"couldn't run\" email goes out, not a false \"0 failed\".\n  throw new Error('Blotato answered without an items list, so the report could not be built.');\n}\nconst posts = answer.items;\n\nconst time = (p) => new Date(p.postTime).getTime();\nconst when = (iso) => new Date(iso).toLocaleString('en-US', {\n  timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric',\n  hour: 'numeric', minute: '2-digit', timeZoneName: 'short',\n});\nconst who = (p) => (p.account ? p.account.name : 'account no longer connected');\nconst type = (p) => p.state?.type;\nconst line = (p) => `- ${when(p.postTime)} · ${who(p)} · Blotato post ${p.id}`;\nconst overdueCutoff = now - OVERDUE_MINUTES * 60 * 1000;\n\nconst failed = posts.filter((p) => type(p) === 'failed' && time(p) >= now - DAY_MS);\nconst overdue = posts.filter((p) => type(p) === 'scheduled' && time(p) < overdueCutoff);\nconst published = posts.filter((p) => type(p) === 'published' && time(p) >= now - DAY_MS);\nconst upcoming = posts\n  .filter((p) => type(p) === 'scheduled' && time(p) >= overdueCutoff)\n  .sort((a, b) => time(a) - time(b));\nconst unknown = posts.filter((p) => !['failed', 'scheduled', 'published'].includes(type(p)));\n\nconst section = (title, list, detail = () => '') =>\n  [`${title} (${list.length})`, ...(list.length ? list.map((p) => line(p) + detail(p)) : ['- None'])].join('\\n');\n\nconst parts = [\n  section('FAILED in the last 24 hours', failed, (p) => `\\n  Error: ${p.state.errorMessage || 'Blotato gave no error message'}`),\n  section(`OVERDUE: still scheduled more than ${OVERDUE_MINUTES} minutes after its post time`, overdue),\n  section('PUBLISHED in the last 24 hours', published, (p) => (p.state.postUrl ? `\\n  ${p.state.postUrl}` : '')),\n  section('COMING UP in the next 7 days', upcoming),\n];\nif (unknown.length) parts.push(`NOTE: ${unknown.length} post(s) had a status this report doesn't recognise. Check my.blotato.com.`);\nif (failed.length || overdue.length) parts.push(`What to do: paste a failed post's error into Post Doctor at ${SITE}, and look for overdue posts at my.blotato.com.`);\nif (answer.cursor) parts.push('NOTE: more than 250 posts in the window, so this report only covers the first 250.');\nparts.push(`Checked ${when(new Date(now).toISOString())}. Read-only: this report never creates or changes posts.`);\n\nconst subject = `${failed.length || overdue.length ? '⚠ ' : ''}RepostRx daily report: ${failed.length} failed, ${overdue.length} overdue`;\nreturn [{ json: { subject, body: parts.join('\\n\\n') } }];\n"
+      },
+      "name": "Build report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": { "appendAttribution": false }
+      },
+      "name": "Email report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [780, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "⚠ RepostRx daily report couldn't run",
+        "emailType": "text",
+        "message": "=The RepostRx daily report couldn't run, so today's silence is NOT an all-clear.\n\nWhat went wrong: {{ $json.error ? ($json.error.message || JSON.stringify($json.error)) : JSON.stringify($json) }}\n\nOpen the workflow's executions in n8n, fix the problem, then run \"Manual test\".",
+        "options": { "appendAttribution": false }
+      },
+      "name": "Email: report couldn't run",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [780, 220]
+    }
+  ],
+  "connections": {
+    "Every day at 8 AM": {
+      "main": [[{ "node": "List posts (Blotato)", "type": "main", "index": 0 }]]
+    },
+    "Manual test": {
+      "main": [[{ "node": "List posts (Blotato)", "type": "main", "index": 0 }]]
+    },
+    "List posts (Blotato)": {
+      "main": [
+        [{ "node": "Build report", "type": "main", "index": 0 }],
+        [{ "node": "Email: report couldn't run", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build report": {
+      "main": [
+        [{ "node": "Email report", "type": "main", "index": 0 }],
+        [{ "node": "Email: report couldn't run", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles"
+  }
+}
