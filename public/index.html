@@ -90,6 +90,7 @@
   <section id="drafts" hidden>
     <h2>2. Edit your drafts</h2>
     <p id="article-title"></p>
+    <p id="article-title-note" class="muted" hidden></p>
     <div id="draft-warnings"></div>
 
     <label for="draft-linkedin">LinkedIn</label>
@@ -178,7 +179,7 @@
   </section>
 
   <!-- VERSION: update this line each milestone. It shows which page version the tab is running. -->
-  <footer id="version">RepostRx · milestone 6.1 · demo mode · 2026-11-15</footer>
+  <footer id="version">RepostRx · milestone 6.2 · 2026-11-15</footer>
 
   <script>
     // ---------- Shared helpers ----------
@@ -411,9 +412,25 @@
       return null;
     }
 
+    // Blotato's title is sometimes an image's label (e.g. "C2 Financial Logo") or empty.
+    // Then show the website name instead, with a note saying what Blotato called it.
+    // Returns { title, note }; note is "" when Blotato's title was used.
+    const IMAGE_LABEL = /\b(logo|image|icon|img|banner|photo|thumbnail)\b|\.(png|jpe?g|gif|svg|webp)$/i;
+    function pageTitle(title, url) {
+      const t = (title ?? "").trim();
+      if (t && !IMAGE_LABEL.test(t)) return { title: t, note: "" };
+      let site = "this article";
+      try { site = new URL(url).hostname.replace(/^www\./i, ""); } catch {}
+      const note = t
+        ? `Blotato called this page "${t}", which looks like an image label, so the website name is shown instead.`
+        : "Blotato didn't find a title for this page, so the website name is shown instead.";
+      return { title: site, note };
+    }
+
     // Asks Claude for the three drafts and shows them in editable boxes.
     async function writeDrafts(article) {
-      showMessage(importStatus, `Writing drafts from "${article.title}"…`);
+      const shown = pageTitle(article.title, article.url);
+      showMessage(importStatus, `Writing drafts from "${shown.title}"…`);
       const res = await api("/api/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -425,7 +442,10 @@
         return;
       }
 
-      document.getElementById("article-title").textContent = `From: ${article.title}`;
+      document.getElementById("article-title").textContent = `From: ${shown.title}`;
+      const titleNote = document.getElementById("article-title-note");
+      titleNote.textContent = shown.note; // textContent: Blotato's title is shown as plain text
+      titleNote.hidden = !shown.note;
       document.getElementById("draft-linkedin").value = data.linkedin;
       document.getElementById("draft-x").value = data.x;
       document.getElementById("draft-facebook").value = data.facebook;
