@@ -23,8 +23,8 @@ function reply(status, body) {
 }
 
 export default async (req) => {
-  // Password first: nothing below runs for strangers.
-  const denied = requirePassword(req);
+  // Password first: nothing below runs for strangers. Demo users may check imports (read-only).
+  const denied = requirePassword(req, { allowDemo: true });
   if (denied) return denied;
 
   if (req.method !== "GET") {

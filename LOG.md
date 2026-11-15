@@ -176,6 +176,20 @@
 - The workflow file in the repo (n8n/daily-report.json) is my template, not an n8n export: no email address, no credential IDs, no keys. An export would include those.
 - After-trial plan: the n8n trial ends ~Nov 24. Decide by Nov 21: export the workflow (free self-hosted n8n can import it) or pay for Starter monthly. Afterwards, remove n8n's Google access (Google Account > Security > Third-party connections) if I stop using it.
 
+## 2026-11-14: Tested: Blotato article import (source-resolutions) didn’t change the credit balance (1,750 before and after 2 imports).
+
+## 2026-11-15: Demo mode
+- Why: so friends (and later a hiring manager) can try RepostRx without being able to post to my accounts.
+- How: a second password, REPOSTRX_DEMO_PASSWORD, in the same sign-in box. The server decides which password it is (constant-time compare, same as the main one).
+- Demo is refused (403) by default: a function must opt in with { allowDemo: true }, so a function I forget to update stays owner-only. Opted in: import, import-status, drafts, diagnose, whoami. Refused: accounts, schedule, post-status.
+- post-status is refused too: demo users can't schedule, so they never have a real post to check, and it removes any chance of seeing my posts' status.
+- Fails closed: demo password missing or under 12 characters = demo off (401). Demo password equal to the main one = everything locked (500), because giving out the "demo" password would really give out full access.
+- The banner and hidden buttons are only what the page shows. The real block is on the server, tested with scripts/test-auth.ps1 (25 passed). Its schedule test sends an empty body, so even a broken check would stop at "Pick a date and time" before Blotato.
+- Credits: one failed import (LinkedIn sign-in wall) and one successful import (reneekonstantine.com) left the balance at 1,750, so demo imports don't cost Blotato credits. They do share Blotato's 30 imports per minute, and drafts and Post Doctor spend my Anthropic credits (capped by the rate limits).
+- Tested in an Incognito window, so my real cards weren't on the demo board.
+
+- 2026-11-15: test-auth.ps1 got 404 on every function. netlify dev had been started outside the repostrx folder, so it wasn't serving RepostRx's functions. Fix: start netlify dev from the repostrx folder. Lesson: 404 from every endpoint means "wrong server or folder", not "wrong password".
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.
@@ -191,4 +205,5 @@
 - 2026-11-13: After Claude Code changes the page, press F5 before testing. The browser keeps running the old code until it reloads, so a "missing" feature may just be a stale tab. Happened three times: the missing Schedule button (milestone 3), a post not added to the board (milestone 4), and a grey badge on an AI answer (milestone 5: the new server answer was shown by the old page code). The version label at the bottom of the page shows which version is running.
 - 2026-11-13: AI answers in Post Doctor are always labelled, checked in code, and editable before copying. Only the redacted error is sent to Claude (no keys, no post ID or reqId), and known errors never use AI.
 - 2026-11-13: Fail closed. If REPOSTRX_APP_PASSWORD is missing or too short, every function refuses instead of running unprotected, so a deploy before the variables were set couldn't expose my keys. The protected code was pushed to GitHub before the Netlify site existed.
+- 2026-11-15: Deny by default. New functions are owner-only unless they opt in to demo, and test passwords are typed with Read-Host -AsSecureString (not shown on screen or saved in PowerShell history).
 - 2026-11-13: Reviewed /permissions. Allow list has only read-only rules (post status, list commits, reading Blotato docs). Anything that posts or pushes still asks.

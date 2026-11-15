@@ -45,11 +45,14 @@
     .badge.ai { background: #fff1d6; color: #8a5300; }
     #version { margin-top: 3rem; padding-top: 0.75rem; border-top: 1px solid #eee; font-size: 0.8rem; color: #888; }
     .post button { font-size: 0.85rem; padding: 0.25rem 0.6rem; }
+    .demo-banner { padding: 0.75rem; border: 2px solid #8a5300; border-radius: 6px; background: #fff8e6; color: #8a5300; font-weight: 600; }
   </style>
 </head>
 <body>
   <h1>RepostRx</h1>
   <p>Turn an article into scheduled social posts. <a href="help.html">Help and getting started</a></p>
+  <!-- Shown only when the server says this is the demo password. The real block is on the server. -->
+  <p id="demo-banner" class="demo-banner" role="status" hidden>Demo mode: scheduling is turned off. Nothing you do here can post.</p>
 
   <!-- Sign-in: the app password is typed here and remembered in this browser only. -->
   <section id="signin">
@@ -168,7 +171,7 @@
     <div id="doctor-result" aria-live="polite"></div>
   </section>
 
-  <section>
+  <section id="accounts-section">
     <h2>Connected accounts</h2>
     <button id="load">Load my accounts</button>
     <div id="result" aria-live="polite"></div>
@@ -248,7 +251,40 @@
       return res;
     }
 
-    // Checks the password with one read-only call (list accounts) before saving it.
+    // "owner", "demo", or "" (signed out). Only changes what the page SHOWS:
+    // the server checks the password on every call and refuses demo where it matters.
+    let appRole = "";
+
+    // Demo mode hides what the server would refuse anyway (accounts, post checks, scheduling).
+    function applyRole(role) {
+      appRole = role;
+      const demo = role === "demo";
+      document.getElementById("demo-banner").hidden = !demo;
+      document.getElementById("accounts-section").hidden = demo;
+      document.getElementById("add-post-form").hidden = demo;
+      document.getElementById("board-refresh").hidden = demo;
+    }
+
+    // Asks the server which password this is. whoami calls nothing else.
+    // Returns true if signed in. If the server can't be reached, the page stays in demo
+    // view (the safer guess) and says so.
+    async function loadRole() {
+      if (!appPassword) { applyRole(""); return false; }
+      try {
+        const res = await api("/.netlify/functions/whoami");
+        if (res.headers.get("x-repostrx-auth")) { applyRole(""); return false; } // api() already showed why
+        const data = await readJson(res);
+        if (!res.ok || (data.role !== "owner" && data.role !== "demo")) throw new Error();
+        applyRole(data.role);
+        return true;
+      } catch {
+        applyRole("demo");
+        showMessage(signinStatus, "Couldn't check your sign-in with the RepostRx server. Reload the page to try again.", "error");
+        return false;
+      }
+    }
+
+    // Checks the password with whoami before saving it.
     signinForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const value = passwordInput.value;
@@ -256,11 +292,17 @@
       showMessage(signinStatus, "Checking…", "muted");
       try {
         appPassword = value; // try it without saving yet
-        const res = await api("/.netlify/functions/accounts");
+        const res = await api("/.netlify/functions/whoami");
         if (res.headers.get("x-repostrx-auth")) return; // api() already showed why
+        const data = await readJson(res);
+        if (!res.ok || (data.role !== "owner" && data.role !== "demo")) {
+          appPassword = "";
+          return showMessage(signinStatus, data.error || "The RepostRx server gave an unexpected answer. Try again shortly.", "error");
+        }
         passwordInput.value = "";
         signinStatus.textContent = "";
         rememberPassword(value);
+        applyRole(data.role);
         refreshBoard({ quiet: true });
       } catch {
         appPassword = "";
@@ -272,6 +314,7 @@
 
     document.getElementById("signout").addEventListener("click", () => {
       rememberPassword("");
+      applyRole("");
       showMessage(signinStatus, "Signed out. This browser no longer has the password.", "muted");
     });
 
@@ -424,6 +467,14 @@
         showMessage(document.getElementById(`schedule-${platform}`), "Checking connected accounts…", "muted");
         delete chosenAccount[platform];
         document.getElementById(textareaId).readOnly = false; // new drafts are editable again
+      }
+
+      // Demo: don't ask for your accounts (the server would refuse with 403 anyway).
+      if (appRole === "demo") {
+        for (const { platform } of SCHEDULE_PLATFORMS) {
+          showMessage(document.getElementById(`schedule-${platform}`), "Demo mode: scheduling is turned off. You can still edit and copy this draft.", "muted");
+        }
+        return;
       }
 
       let accounts;
@@ -949,6 +1000,7 @@
         if (!quiet) showMessage(boardStatus, "Sign in at the top of the page to check your posts.", "error");
         return;
       }
+      if (appRole === "demo") return; // demo can't check posts with Blotato (the server refuses with 403)
       const toCheck = posts.filter((p) => !FINAL_STATUSES.includes(p.status));
       if (toCheck.length === 0) {
         if (!quiet) showMessage(boardStatus, posts.length ? "Every post is published or failed, so there's nothing to recheck." : "No posts to check yet.", "muted");
@@ -972,8 +1024,8 @@
               stoppedEarly = true;
               break;
             }
-            if (err.status === 401) {
-              // Wrong RepostRx password or Blotato key: every other check would fail too.
+            if (err.status === 401 || err.status === 403) {
+              // Wrong RepostRx password, Blotato key, or demo mode: every other check would fail too.
               stoppedEarly = err.message;
               break;
             }
@@ -1039,8 +1091,9 @@
     document.getElementById("add-sample-failed").addEventListener("click", () => addSamplePost("failed"));
     document.getElementById("add-sample-stuck").addEventListener("click", () => addSamplePost("stuck"));
 
-    renderBoard();               // show saved posts as soon as the page loads…
-    refreshBoard({ quiet: true }); // …then check the ones that can still change
+    renderBoard(); // show saved posts as soon as the page loads…
+    // …then learn owner or demo, and (owner only) check the posts that can still change.
+    loadRole().then((signedIn) => { if (signedIn) refreshBoard({ quiet: true }); });
 
     // ---------- Post Doctor (milestone 5) ----------
     // Sends a pasted error (or a failed post's error) to diagnose.mjs and shows the

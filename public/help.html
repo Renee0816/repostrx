@@ -45,7 +45,7 @@
       <li><label><input type="checkbox"> <span><strong>Have your RepostRx password ready.</strong> You get it from whoever set up RepostRx for you. Keep it in your password manager.</span></label></li>
       <li><label><input type="checkbox"> <span><strong>Open RepostRx and sign in.</strong> Type the password and click <span class="button-name">Sign in</span>. You'll see "Signed in on this browser."</span></label></li>
       <li><label><input type="checkbox"> <span><strong>Check your accounts.</strong> At the bottom of the page, click <span class="button-name">Load my accounts</span>. Your LinkedIn or X account should be listed. If it isn't, connect it at my.blotato.com first.</span></label></li>
-      <li><label><input type="checkbox"> <span><strong>Import an article.</strong> Paste the link to one of your articles and click <span class="button-name">Import</span>. It can take up to a minute or two. If it says it couldn't find the article text (common with Substack), <a href="#import">paste the text instead</a>.</span></label></li>
+      <li><label><input type="checkbox"> <span><strong>Import an article.</strong> Paste the link to one of your articles and click <span class="button-name">Import</span>. It can take up to a minute or two. If it says it couldn't find the article text (common with Substack and LinkedIn), <a href="#import">paste the text instead</a>.</span></label></li>
       <li><label><input type="checkbox"> <span><strong>Read and edit the drafts.</strong> RepostRx writes a LinkedIn, an X and a Facebook draft in your voice. Change anything you like.</span></label></li>
       <li><label><input type="checkbox"> <span><strong>Pick a time.</strong> For your first post, choose a time tomorrow, so you have time to double-check it. It must be at least 5 minutes from now.</span></label></li>
       <li><label><input type="checkbox"> <span><strong>Schedule it.</strong> Click <span class="button-name">Schedule LinkedIn post…</span>, read the summary (account, time and text), then click <span class="button-name">Confirm and schedule</span>. Click it once.</span></label></li>
@@ -92,13 +92,19 @@
       <li>On a shared or borrowed computer, click <span class="button-name">Sign out</span> when you're done. That makes the browser forget the password.</li>
       <li>Never send the password by email or text. If you think someone else has it, ask whoever set up RepostRx to change it.</li>
     </ul>
+    <h3 id="demo">Demo mode</h3>
+    <p>If you were given a <strong>demo password</strong>, you can try RepostRx without being able to post anything. You'll see a banner saying <strong>"Demo mode: scheduling is turned off."</strong></p>
+    <ul>
+      <li><strong>You can:</strong> import an article or paste text, read and edit the drafts, add sample cards to the board, use Post Doctor, and read this help page.</li>
+      <li><strong>You can't:</strong> schedule posts, see the connected social accounts, or check real posts. RepostRx's server refuses these for the demo password, so nothing you do in demo mode can post.</li>
+    </ul>
   </section>
 
   <section id="import">
     <h2>Importing an article</h2>
     <p>Under <strong>1. Import an article</strong>, paste the article's web address (it starts with https://) and click <span class="button-name">Import</span>. RepostRx shows its progress, then writes your drafts automatically.</p>
     <h3>If the import doesn't work: paste the text instead</h3>
-    <p>Some websites, including <strong>Substack</strong>, don't let RepostRx read the article itself; it only sees the page's menus and buttons. When that happens, RepostRx tells you so instead of writing drafts about nothing.</p>
+    <p>Some websites, including <strong>Substack</strong> and <strong>LinkedIn</strong> articles, don't let RepostRx read the article itself; it only sees the page's menus, buttons or a sign-in page. When that happens, RepostRx tells you so instead of writing drafts about nothing.</p>
     <ol>
       <li>Open your article, select all of its text, and copy it.</li>
       <li>Paste it into <strong>Or paste the article text</strong>.</li>
@@ -209,7 +215,10 @@
       <dd>Your browser may be showing an old copy of the page. Press <kbd>F5</kbd> (or <kbd>Ctrl</kbd> + <kbd>R</kbd>; on a Mac, <kbd>⌘</kbd> + <kbd>R</kbd>) to reload it. The version line at the bottom of the RepostRx page shows which version you're on.</dd>
 
       <dt>"The imported page didn't include the article itself"</dt>
-      <dd>The website (often Substack) only showed RepostRx its menus. Use <a href="#import">paste the text instead</a>.</dd>
+      <dd>The website (often Substack or LinkedIn) only showed RepostRx its menus or a sign-in page. Use <a href="#import">paste the text instead</a>.</dd>
+
+      <dt>The page says "Demo mode"</dt>
+      <dd>You signed in with the demo password, so scheduling is turned off. That's expected. See <a href="#demo">Demo mode</a>. To schedule, sign out and sign in with the main password.</dd>
 
       <dt>The X counter is red</dt>
       <dd>The X draft is over 280 characters, so RepostRx won't schedule it. Shorten it until the counter is back to normal. Remember that the link counts as 23 characters.</dd>
