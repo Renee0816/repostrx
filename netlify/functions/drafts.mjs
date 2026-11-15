@@ -88,6 +88,14 @@ const MESSAGES = {
   529: "Claude is overloaded right now. Try again in a minute.",
 };
 
+const DRAFT_NAMES = { linkedin: "LinkedIn", x: "X", facebook: "Facebook" };
+
+// Claude can say contentFound: true and still leave drafts empty (seen 2026-11-15).
+// Returns the keys of drafts that are missing, not text, or only whitespace.
+function emptyDrafts(drafts) {
+  return Object.keys(DRAFT_NAMES).filter((k) => typeof drafts[k] !== "string" || !drafts[k].trim());
+}
+
 // Builds a JSON response with the given status code.
 function reply(status, body) {
   return new Response(JSON.stringify(body), {
@@ -203,6 +211,24 @@ export default async (req) => {
     return reply(422, {
       error: "The imported page didn't include the article itself, only menus, sign-up prompts or similar. This often happens with sites that load articles with JavaScript, such as Substack. Paste the article text into the box below instead.",
     });
+  }
+
+  // Check BEFORE adding the link: an empty draft plus the link would look like a draft.
+  const empty = emptyDrafts(drafts);
+  if (empty.length) {
+    // Log only the shape of Claude's answer, never the article or the drafts' text.
+    const length = (d) => (typeof d === "string" ? d.trim().length : null);
+    console.warn("drafts: Claude returned empty draft(s)", JSON.stringify({
+      contentFound: drafts.contentFound,
+      linkedin: length(drafts.linkedin),
+      x: length(drafts.x),
+      facebook: length(drafts.facebook),
+    }));
+    if (empty.length === Object.keys(DRAFT_NAMES).length) {
+      return reply(422, { error: "Claude didn't write any drafts for this page. Try Import again, or paste the article text into the box below." });
+    }
+    const names = empty.map((k) => DRAFT_NAMES[k]).join(" and ");
+    return reply(502, { error: `Claude left the ${names} draft${empty.length > 1 ? "s" : ""} empty. Try again.` });
   }
 
   // We add the link ourselves so it's always exactly right.

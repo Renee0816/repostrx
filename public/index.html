@@ -441,6 +441,14 @@
         showMessage(importStatus, data.error, "error");
         return;
       }
+      // Backup for the server's check: never say "Drafts ready" over empty drafts.
+      // A draft counts as empty if nothing is left once the article link is removed.
+      const withoutLink = (draft) => (article.url ? draft.split(article.url).join("") : draft);
+      const hasText = (draft) => typeof draft === "string" && withoutLink(draft).trim() !== "";
+      if (![data.linkedin, data.x, data.facebook].every(hasText)) {
+        showMessage(importStatus, "The drafts came back empty, so nothing was filled in. Try again.", "error");
+        return;
+      }
 
       document.getElementById("article-title").textContent = `From: ${shown.title}`;
       const titleNote = document.getElementById("article-title-note");
