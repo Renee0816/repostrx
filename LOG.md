@@ -190,6 +190,16 @@
 
 - 2026-11-15: test-auth.ps1 got 404 on every function. netlify dev had been started outside the repostrx folder, so it wasn't serving RepostRx's functions. Fix: start netlify dev from the repostrx folder. Lesson: 404 from every endpoint means "wrong server or folder", not "wrong password".
 
+## 2026-11-15: Two import fixes (milestone 6.2)
+- Title: Blotato's article extraction returned "C2 Financial Logo" as the title for https://www.c2financialcorp.com/rkonstantine (the logo's label, not the page title). Reproduced with Blotato's extract tool, so it comes from Blotato, not our code. The title is display only (never sent to Claude).
+  - Fix: if the title is empty or looks like an image label (logo, image, icon, .png...), show the website name with a note saying what Blotato returned. Nothing hidden: a real title like "How to design a logo" still shows in the note.
+  - Could be reported to Blotato as an extraction bug.
+- Empty drafts: Claude said contentFound: true but returned empty drafts. The server added the link to each empty draft and answered 200, so the page showed blank lines plus the link and said "Drafts ready."
+  - Clue: the drafts request took 2.4 s instead of the usual 5.7–7.9 s.
+  - Fix: the server checks every draft before adding the link (all empty = 422, some empty = 502 naming them), and the page double-checks that each draft has text besides the link.
+  - A safe log line records only contentFound and each draft's length, never the article, the drafts or a key.
+- Lesson: "success" with nothing in it is still a failure. Check the output, not just the status code. And if you can't see it, you can't diagnose it, so log safe facts.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.
