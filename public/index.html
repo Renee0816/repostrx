@@ -68,6 +68,16 @@
     Signed in on this browser. <button id="signout" type="button">Sign out</button>
   </p>
 
+  <section id="footer-section">
+    <h2>Compliance footer</h2>
+    <p class="muted" id="footer-help">Added after the link on every new draft. Leave a box empty for no footer.</p>
+    <label for="footer-full">LinkedIn and Facebook footer</label>
+    <textarea id="footer-full" rows="2"></textarea>
+    <label for="footer-x">X footer (short, counts toward the 280 characters)</label>
+    <textarea id="footer-x" rows="2"></textarea>
+    <div id="footer-status" aria-live="polite"></div>
+  </section>
+
   <section>
     <h2>1. Import an article</h2>
     <form id="import-form">
@@ -179,7 +189,7 @@
   </section>
 
   <!-- VERSION: update this line each milestone. It shows which page version the tab is running. -->
-  <footer id="version">RepostRx · milestone 6.2 · 2026-11-15</footer>
+  <footer id="version">RepostRx · milestone 6.3 · 2026-11-17</footer>
 
   <script>
     // ---------- Shared helpers ----------
@@ -264,6 +274,39 @@
       document.getElementById("accounts-section").hidden = demo;
       document.getElementById("add-post-form").hidden = demo;
       document.getElementById("board-refresh").hidden = demo;
+      loadFooters(role);
+    }
+
+    // ---------- Compliance footer (milestone 6.3) ----------
+    // Owner: pre-filled from public/footer.json (public info, not a secret).
+    // Demo: empty, with a sample placeholder, so visitors can try their own.
+    const FOOTER_SAMPLE = {
+      full: "Your Name, NMLS #0000000 · Your Company, NMLS #0000000 · Equal Opportunity Mortgage Broker/Lender",
+      short: "NMLS #0000000 · Company NMLS #0000000 · Equal Opportunity Mortgage Broker/Lender",
+    };
+
+    async function loadFooters(role) {
+      const full = document.getElementById("footer-full");
+      const short = document.getElementById("footer-x");
+      const help = document.getElementById("footer-help");
+      const status = document.getElementById("footer-status");
+      status.textContent = "";
+      full.value = "";
+      short.value = "";
+      full.placeholder = role === "demo" ? `Example: ${FOOTER_SAMPLE.full}` : "";
+      short.placeholder = role === "demo" ? `Example: ${FOOTER_SAMPLE.short}` : "";
+      help.textContent = role === "demo"
+        ? "Demo mode: type your own disclosures to see how they're added after the link. Leave a box empty for no footer."
+        : "Added after the link on every new draft. Edits here last until you reload; to change it for good, edit footer.json. Leave a box empty for no footer.";
+      if (role !== "owner") return;
+      try {
+        const res = await fetch("footer.json", { cache: "no-cache" }); // static file: no password needed
+        const data = await res.json();
+        full.value = typeof data.full === "string" ? data.full : "";
+        short.value = typeof data.short === "string" ? data.short : "";
+      } catch {
+        showMessage(status, "Couldn't load footer.json, so the footer boxes are empty. Reload the page, or type the footer in.", "error");
+      }
     }
 
     // Asks the server which password this is. whoami calls nothing else.
@@ -431,10 +474,12 @@
     async function writeDrafts(article) {
       const shown = pageTitle(article.title, article.url);
       showMessage(importStatus, `Writing drafts from "${shown.title}"…`);
+      const sentFooter = document.getElementById("footer-full").value;
+      const sentXFooter = document.getElementById("footer-x").value;
       const res = await api("/api/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: article.text, url: article.url }),
+        body: JSON.stringify({ text: article.text, url: article.url, footer: sentFooter, xFooter: sentXFooter }),
       });
       const data = await readJson(res);
       if (!res.ok) {
@@ -442,9 +487,10 @@
         return;
       }
       // Backup for the server's check: never say "Drafts ready" over empty drafts.
-      // A draft counts as empty if nothing is left once the article link is removed.
-      const withoutLink = (draft) => (article.url ? draft.split(article.url).join("") : draft);
-      const hasText = (draft) => typeof draft === "string" && withoutLink(draft).trim() !== "";
+      // A draft counts as empty if nothing is left once the link and footers are removed.
+      const added = [article.url, sentFooter, sentXFooter].map((s) => (s ?? "").trim()).filter(Boolean);
+      const withoutAdded = (draft) => added.reduce((d, s) => d.split(s).join(""), draft);
+      const hasText = (draft) => typeof draft === "string" && withoutAdded(draft).trim() !== "";
       if (![data.linkedin, data.x, data.facebook].every(hasText)) {
         showMessage(importStatus, "The drafts came back empty, so nothing was filled in. Try again.", "error");
         return;
@@ -695,7 +741,20 @@
         cancelButton.type = "button";
         cancelButton.textContent = "Cancel";
 
-        panel.append(heading, textBox, accountLine, timeLine, confirmButton, cancelButton);
+        // Compliance check: a warning, not a block. Uses the footer box for this platform.
+        const footerBox = document.getElementById(platform === "twitter" ? "footer-x" : "footer-full");
+        const expectedFooter = footerBox.value.trim();
+        const footerWarning = !expectedFooter
+          ? "No compliance footer is set (the footer box at the top is empty). Check your disclosures before confirming."
+          : !snapshot.text.includes(expectedFooter)
+            ? "This post doesn't include your compliance footer exactly as set at the top. It may have been edited out or changed. Check before confirming."
+            : "";
+        const footerLine = document.createElement("p");
+        footerLine.className = "warning";
+        footerLine.textContent = footerWarning ? `⚠ ${footerWarning}` : "";
+        footerLine.hidden = !footerWarning;
+
+        panel.append(heading, footerLine, textBox, accountLine, timeLine, confirmButton, cancelButton);
 
         cancelButton.addEventListener("click", () => {
           closePanel();

@@ -1,6 +1,10 @@
-// POST /api/drafts   body: { "text": "article text...", "url": "https://... (optional)" }
-// Asks Claude to write one draft each for LinkedIn, X and Facebook.
-// Returns { linkedin, x, facebook, warnings }. Nothing is posted anywhere.
+// POST /api/drafts
+// body: { "text": "article text...", "url": "https://... (optional)",
+//         "footer": "compliance footer for LinkedIn and Facebook (optional)",
+//         "xFooter": "short compliance footer for X (optional)" }
+// Asks Claude to write one draft each for LinkedIn, X and Facebook, then adds
+// the link and the footer to each. Returns { linkedin, x, facebook, warnings }.
+// Nothing is posted anywhere.
 
 import { requirePassword } from "../lib/auth.mjs";
 
@@ -18,6 +22,8 @@ const MODEL = "claude-haiku-5-5";
 const MAX_ARTICLE_CHARS = 100_000;
 const X_LIMIT = 280;
 const X_LINK_LENGTH = 23; // X counts every link as 23 characters, whatever its real length
+const FOOTER_MAX = 300;   // LinkedIn/Facebook compliance footer
+const X_FOOTER_MAX = 100; // X footer: longer would leave Claude almost no room
 
 // Character count the way X does it: any link counts as 23, and [...s]
 // counts an emoji as one character (still a close estimate, not exact).
@@ -38,7 +44,9 @@ function isWebUrl(value) {
 // Instructions for Claude. Kept separate from the article so the article
 // can't override them.
 // hasLink: whether we'll append the article's URL to each draft afterwards.
-const systemPrompt = (hasLink) => `You turn articles into social media post drafts.
+// xBudget: how many characters Claude may use for X, after leaving room for the link and footer.
+// hasFooter: whether we'll append a compliance footer afterwards.
+const systemPrompt = (hasLink, xBudget, hasFooter) => `You turn articles into social media post drafts.
 
 The user message contains text extracted from a web page, inside <article> tags.
 - Extraction often includes page clutter: site menus, navigation links, "Main page", search boxes, sign-up and log-in prompts, "Donate" or "Subscribe" banners, cookie notices, footers, and lists of languages or related links. Ignore all of that. Use only the article itself.
@@ -55,13 +63,15 @@ Voice: the person posting is the article's author, sharing their own work.
 
 Write one draft per platform:
 - linkedin: professional and insightful, 3 to 5 short paragraphs, ending with a question or takeaway. At most 3 hashtags.
-- x: one punchy post, at most ${hasLink ? 240 : 260} characters including spaces and hashtags. At most 2 hashtags.
+- x: one punchy post, at most ${xBudget} characters including spaces and hashtags. At most 2 hashtags.
 - facebook: friendly and conversational, 2 to 3 short paragraphs.
 
 ${hasLink
   ? "A link to the article will be added automatically at the end of each draft. You may point to it (\"link below\", \"full post here\"), but never write a URL yourself."
   : "There is no link to the article, so don't write a URL and don't promise one (no \"link below\" or \"read the full post\")."}
-
+${hasFooter
+  ? "\nA compliance footer (licence numbers and disclosures) will be added automatically after each draft. Don't write one yourself, and don't add licence or NMLS numbers.\n"
+  : ""}
 Don't use markdown formatting.`;
 
 // The exact JSON shape Claude must return (structured outputs).
@@ -113,9 +123,9 @@ export default async (req) => {
     return reply(405, { error: "This endpoint only accepts POST requests." });
   }
 
-  let text, url;
+  let text, url, footer, xFooter;
   try {
-    ({ text, url } = await req.json());
+    ({ text, url, footer, xFooter } = await req.json());
   } catch {
     return reply(400, { error: 'Send JSON like {"text": "the article text", "url": "https://... (optional)"}.' });
   }
@@ -124,6 +134,19 @@ export default async (req) => {
   url = typeof url === "string" ? url.trim() : "";
   if (url && !isWebUrl(url)) {
     return reply(400, { error: "The article link must be a full address starting with http:// or https://, or left empty." });
+  }
+
+  // Compliance footers are optional (empty = none), but must be plain text of a sensible length.
+  if ((footer != null && typeof footer !== "string") || (xFooter != null && typeof xFooter !== "string")) {
+    return reply(400, { error: "The compliance footers must be text." });
+  }
+  footer = (footer ?? "").trim();
+  xFooter = (xFooter ?? "").trim();
+  if (footer.length > FOOTER_MAX) {
+    return reply(400, { error: `The compliance footer is ${footer.length} characters; the limit is ${FOOTER_MAX}. Shorten it and try again.` });
+  }
+  if (xLength(xFooter) > X_FOOTER_MAX) {
+    return reply(400, { error: `The X footer is ${xLength(xFooter)} characters; the limit is ${X_FOOTER_MAX}, so the post still has room. Shorten it and try again.` });
   }
 
   text = typeof text === "string" ? text.trim() : "";
@@ -145,6 +168,10 @@ export default async (req) => {
     });
   }
 
+  // X room for Claude: the old budgets (240 with a link, 260 without, leaving a safety
+  // margin), minus the X footer and the blank line before it.
+  const xBudget = (url ? 240 : 260) - (xFooter ? xLength(xFooter) + 2 : 0);
+
   let res;
   try {
     res = await fetch(CLAUDE_URL, {
@@ -157,7 +184,7 @@ export default async (req) => {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 8000,
-        system: systemPrompt(Boolean(url)),
+        system: systemPrompt(Boolean(url), xBudget, Boolean(footer || xFooter)),
         messages: [{ role: "user", content: `<article>\n${text}\n</article>` }],
         output_config: {
           effort: "low", // short drafts don't need deep reasoning; keeps us under Netlify's 10 s limit
@@ -231,12 +258,13 @@ export default async (req) => {
     return reply(502, { error: `Claude left the ${names} draft${empty.length > 1 ? "s" : ""} empty. Try again.` });
   }
 
-  // We add the link ourselves so it's always exactly right.
-  const withLink = (draft) => (url ? `${draft.trim()}\n\n${url}` : draft.trim());
+  // We add the link and the footer ourselves so they're always exactly right:
+  // draft, blank line, link, blank line, footer (skipping any that are empty).
+  const finish = (draft, foot) => [draft.trim(), url, foot].filter(Boolean).join("\n\n");
   const result = {
-    linkedin: withLink(drafts.linkedin),
-    x: withLink(drafts.x),
-    facebook: withLink(drafts.facebook),
+    linkedin: finish(drafts.linkedin, footer),
+    x: finish(drafts.x, xFooter),
+    facebook: finish(drafts.facebook, footer),
   };
 
   const warnings = [];

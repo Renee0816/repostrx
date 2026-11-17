@@ -200,6 +200,15 @@
   - A safe log line records only contentFound and each draft's length, never the article, the drafts or a key.
 - Lesson: "success" with nothing in it is still a failure. Check the output, not just the status code. And if you can't see it, you can't diagnose it, so log safe facts.
 
+## 2026-11-17: Compliance footer (milestone 6.3)
+- Why: so I never post without my disclosures (NMLS numbers and C2's "Equal Opportunity Mortgage Broker/Lender" wording, matched to C2's website).
+- Where it lives: public/footer.json. It's public info, so it isn't a secret and doesn't belong in .env. The page pre-fills two editable boxes from it (owner only); demo boxes start empty with a sample placeholder.
+- The server adds it, after the link: draft, link, footer. X gets a short version (74 characters), and Claude's X budget shrinks to match (164 with a link), so the worst case is 265 of 280.
+- Footers are checked on the server: text only, max 300 (X: 100), so an oversized X footer can't leave Claude no room.
+- Before scheduling, the confirm summary warns (doesn't block) if the footer box is empty or the draft no longer contains the footer exactly.
+- The empty-draft check had to learn about the footer too: "link + footer" with no text is still an empty draft.
+- Tested offline with a fake Claude, then in the browser as owner and demo. The warning was tested on LinkedIn (no X account connected), always with Cancel.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.
