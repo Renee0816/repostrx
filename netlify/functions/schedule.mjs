@@ -1,11 +1,14 @@
 // POST /.netlify/functions/schedule
-// body: { "platform": "linkedin", "accountId": "42078", "text": "...", "scheduledTime": "2026-11-18T17:00:00.000Z" }
-// Schedules ONE post on Blotato and returns { postSubmissionId, scheduledTime }.
+// body: { "platform": "linkedin", "accountId": "42078", "text": "...", "scheduledTime": "2026-11-18T17:00:00.000Z",
+//         "articleUrl": "https://... (optional, for the archive)" }
+// Schedules ONE post on Blotato and returns { postSubmissionId, scheduledTime, archived }
+// (or archiveWarning instead of archived, if the post was scheduled but not archived).
 //
 // SAFETY: Blotato publishes IMMEDIATELY if a post has no scheduledTime.
 // So the time is checked first, and every check runs before Blotato is called.
 
 import { requirePassword } from "../lib/auth.mjs";
+import { addRecord } from "../lib/archive.mjs";
 
 const BLOTATO_POSTS_URL ="https://backend.blotato.com/v2/posts";
 const BLOTATO_ACCOUNTS_URL = "https://backend.blotato.com/v2/users/me/accounts";
@@ -33,6 +36,31 @@ function reply(status, body) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+// Returns true only for full http:// or https:// addresses.
+function isWebUrl(value) {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+// Saves what was just scheduled to the archive. Never throws: the post is already
+// scheduled, so an archive problem must not look like a scheduling failure.
+// Returns { archived: true } or { archiveWarning: "..." }.
+async function archivePost(fields) {
+  try {
+    const result = await addRecord(fields.postSubmissionId, fields);
+    if (result.added) return { archived: true };
+    console.warn("schedule: archive record not added", JSON.stringify({ reason: result.reason }));
+    return { archiveWarning: `The post was scheduled, but it wasn't saved to the archive (${result.reason}). Note its details for your records.` };
+  } catch (err) {
+    console.error("schedule: archive save failed", JSON.stringify({ name: err?.name ?? "Error" }));
+    return { archiveWarning: "The post was scheduled, but it couldn't be saved to the archive. Note its details for your records." };
+  }
 }
 
 // Character count the way X does it: any link counts as 23.
@@ -163,14 +191,30 @@ export default async (req) => {
     return reply(res.status, { error: message + detail, outcomeUnknown: res.status >= 500 });
   }
 
+  let scheduled;
   try {
     const data = await res.json();
     if (!data.postSubmissionId) throw new Error("missing id");
-    return reply(200, { postSubmissionId: data.postSubmissionId, scheduledTime: data.scheduledTime ?? scheduledTime });
+    scheduled = { postSubmissionId: data.postSubmissionId, scheduledTime: data.scheduledTime ?? scheduledTime };
   } catch {
     return reply(502, {
       error: "Blotato accepted the post but didn't send back an ID. Check your schedule at my.blotato.com before trying again.",
       outcomeUnknown: true,
     });
   }
+
+  // 5. Scheduled. Save the record: exactly what was sent, nothing secret.
+  const archive = await archivePost({
+    postSubmissionId: scheduled.postSubmissionId,
+    text,
+    platform,
+    accountName: account.fullname || account.username || null,
+    accountId,
+    scheduledTime: scheduled.scheduledTime,
+    articleUrl: typeof body.articleUrl === "string" && isWebUrl(body.articleUrl.trim()) ? body.articleUrl.trim() : null,
+    scheduledAt: new Date().toISOString(),
+    source: "scheduled in RepostRx",
+  });
+
+  return reply(200, { ...scheduled, ...archive });
 };

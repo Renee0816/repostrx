@@ -209,6 +209,19 @@
 - The empty-draft check had to learn about the footer too: "link + footer" with no text is still an empty draft.
 - Tested offline with a fake Claude, then in the browser as owner and demo. The warning was tested on LinkedIn (no X account connected), always with Cancel.
 
+## 2026-11-17: Post archive (milestone 6.4)
+- Why: advertising record-keeping. Every post scheduled with RepostRx is saved with its exact text (link and footer included), platform, account, post time, article link, postSubmissionId and when it was scheduled. Never keys or passwords: only a fixed list of fields is saved.
+- Storage: Netlify Blobs (built into the site, no new account or key, survives deploys; netlify dev has its own local copy, so local tests never touch the live archive). Needed @netlify/blobs: checked for install scripts first (none), installed with --ignore-scripts, pinned to 11.1.9. It needs Node 22.12+: my computer has 26.13, Netlify runs functions on Node 24 (read from the deploy details).
+- Append-only in code: records and notes are written with "only if new", so the app can't overwrite them, and there's no edit or delete. Status (published/failed, live URL) is a separate entry, so it can never change the original text. Limit: the Netlify site owner can still delete entries with Netlify's tools, and deleting the site deletes the archive, so download the CSV monthly and keep it elsewhere.
+- If saving to the archive fails after Blotato accepted the post, the post is still reported as scheduled, with a warning. Never retry a schedule because of an archive problem.
+- CSV: every cell quoted; cells starting with = + - @ get a leading ' so a spreadsheet can't run them as formulas; UTF-8 BOM so Excel shows "·" correctly.
+- Backfill from Blotato's list (read-only, 90 days back and ahead): preview first, then "Add permanently". The list has text but no postSubmissionId and no "scheduled at", so those show as "not available" (nothing guessed). A post already archived from RepostRx is matched by platform, account, time and exact text, so it isn't added twice.
+- Finding: a post moved to Blotato drafts disappears from the list (6855189). Rescheduling it from Blotato gave it a new number (7092517) and no postSubmissionId.
+- Finding: Blotato can't edit a scheduled post's text, so I added the footer by rescheduling from drafts, or by editing on LinkedIn after publishing. The archive keeps the text as scheduled; a note records the edit.
+- Risk caught in planning: my old board cards had the same time and platform as the rescheduled posts, so board-ID matching could have attached an old ID to a new post, permanently. Fixes: remove stale cards, use a board ID only if exactly one card matches, and preview before saving.
+- Notes: append-only, max 500 characters, refused if they look like a password or key (links are allowed).
+- Tested offline with a fake Blotato and a fake store (never by scheduling a real post), then locally, where the archive is netlify dev's own copy.
+
 ## Good practices
 
 - 2026-11-10: Locked my n8n Blotato credential to the backend.blotato.com domain (Allowed HTTP Request Domains). The API key can only be sent to Blotato, even if a workflow is misconfigured.

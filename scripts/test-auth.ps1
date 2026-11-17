@@ -4,7 +4,8 @@
 #   calling Blotato or Claude, even if the password check were broken.
 # - GET requests use made-up IDs, so even a broken check could only read nothing.
 #   (Demo's import-status call does reach Blotato, read-only, for the made-up ID.)
-# - The owner password is only sent to whoami, which calls nothing.
+# - The owner password is only sent to whoami (calls nothing) and archive (read-only,
+#   no Blotato call).
 # Passwords are read with Read-Host -AsSecureString: not shown, not saved, not in history.
 #
 # Run from the repostrx folder:
@@ -27,7 +28,10 @@ $endpoints = @(
   @{ Name = "schedule";      Method = "POST"; Path = "/.netlify/functions/schedule" },
   @{ Name = "post-status";   Method = "GET";  Path = "/.netlify/functions/post-status?id=$fakeId" },
   @{ Name = "diagnose";      Method = "POST"; Path = "/api/diagnose" },
-  @{ Name = "whoami";        Method = "GET";  Path = "/.netlify/functions/whoami" }
+  @{ Name = "whoami";        Method = "GET";  Path = "/.netlify/functions/whoami" },
+  @{ Name = "archive";       Method = "GET";  Path = "/.netlify/functions/archive" },
+  @{ Name = "archive-import"; Method = "POST"; Path = "/.netlify/functions/archive-import" },
+  @{ Name = "archive-note";  Method = "POST"; Path = "/.netlify/functions/archive-note" }
 )
 
 # Sends one request and returns status, the demo header and the body (also for 4xx/5xx).
@@ -70,7 +74,7 @@ if ($demo) {
   # Elsewhere it gets past the password check and stops at the empty body (400),
   # except import-status, which asks Blotato (read-only) about the made-up ID.
   $demoExpected = @{
-    "accounts" = 403; "schedule" = 403; "post-status" = 403
+    "accounts" = 403; "schedule" = 403; "post-status" = 403; "archive" = 403; "archive-import" = 403; "archive-note" = 403
     "import" = 400; "drafts" = 400; "diagnose" = 400
     "import-status" = "allowed"; "whoami" = 200
   }
@@ -78,6 +82,8 @@ if ($demo) {
 }
 
 Check "owner" ($endpoints | Where-Object { $_.Name -eq "whoami" }) $owner 200
+# Owner can read the archive (read-only; on localhost this is netlify dev's local copy).
+Check "owner" ($endpoints | Where-Object { $_.Name -eq "archive" }) $owner 200
 
 $owner = $null; $demo = $null
 ""

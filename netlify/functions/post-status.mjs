@@ -1,8 +1,11 @@
 // GET /.netlify/functions/post-status?id=<postSubmissionId>
-// READ-ONLY: asks Blotato for one post's status. It can't create, change or delete posts.
+// READ-ONLY towards Blotato: asks for one post's status. It can't create, change or delete posts.
 // Returns { status, scheduledTime, publicUrl, errorMessage, summary }.
+// If the post is in the archive, it also saves this status there (in its separate
+// status entry; the archived record itself never changes).
 
 import { requirePassword } from "../lib/auth.mjs";
+import { setStatus } from "../lib/archive.mjs";
 
 const BLOTATO_URL ="https://backend.blotato.com/v2/posts/";
 
@@ -90,6 +93,14 @@ export default async (req) => {
   }
 
   const errorMessage = typeof data.errorMessage === "string" ? data.errorMessage : null;
+  const publicUrl = typeof data.publicUrl === "string" ? data.publicUrl : null;
+
+  // Archive status update. Never blocks or changes the answer: a failure is only logged.
+  try {
+    await setStatus(id, { status, publicUrl, errorMessage });
+  } catch (err) {
+    console.warn("post-status: archive status not saved", JSON.stringify({ name: err?.name ?? "Error" }));
+  }
   const summary =
     status === "failed"
       ? `Blotato couldn't publish this post${errorMessage ? `: ${errorMessage}` : "."}`
@@ -98,7 +109,7 @@ export default async (req) => {
   return reply(200, {
     status,
     scheduledTime: typeof data.scheduledTime === "string" ? data.scheduledTime : null,
-    publicUrl: typeof data.publicUrl === "string" ? data.publicUrl : null,
+    publicUrl,
     errorMessage,
     summary,
   });

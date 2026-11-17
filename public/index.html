@@ -45,6 +45,8 @@
     .badge.ai { background: #fff1d6; color: #8a5300; }
     #version { margin-top: 3rem; padding-top: 0.75rem; border-top: 1px solid #eee; font-size: 0.8rem; color: #888; }
     .post button { font-size: 0.85rem; padding: 0.25rem 0.6rem; }
+    .archive-list { list-style: none; padding: 0; }
+    .archive-list .post .raw { font-family: inherit; font-size: 0.95rem; }
     .demo-banner { padding: 0.75rem; border: 2px solid #8a5300; border-radius: 6px; background: #fff8e6; color: #8a5300; font-weight: 600; }
   </style>
 </head>
@@ -182,6 +184,18 @@
     <div id="doctor-result" aria-live="polite"></div>
   </section>
 
+  <!-- Owner only (hidden in demo and when signed out). The server refuses everyone else anyway. -->
+  <section id="archive-section" hidden>
+    <h2>Archive</h2>
+    <p class="muted">A permanent record of every post scheduled with RepostRx, for advertising record-keeping. Records can't be edited or deleted here. Download the CSV regularly and keep it somewhere else too.</p>
+    <button id="archive-load" type="button">Load archive</button>
+    <button id="archive-csv" type="button">Download CSV</button>
+    <button id="archive-import" type="button">Add posts from Blotato's list…</button>
+    <div id="archive-import-panel" aria-live="polite"></div>
+    <div id="archive-status" aria-live="polite"></div>
+    <ul id="archive-list" class="archive-list"></ul>
+  </section>
+
   <section id="accounts-section">
     <h2>Connected accounts</h2>
     <button id="load">Load my accounts</button>
@@ -189,7 +203,7 @@
   </section>
 
   <!-- VERSION: update this line each milestone. It shows which page version the tab is running. -->
-  <footer id="version">RepostRx · milestone 6.3 · 2026-11-17</footer>
+  <footer id="version">RepostRx · milestone 6.4 · 2026-11-17</footer>
 
   <script>
     // ---------- Shared helpers ----------
@@ -274,6 +288,11 @@
       document.getElementById("accounts-section").hidden = demo;
       document.getElementById("add-post-form").hidden = demo;
       document.getElementById("board-refresh").hidden = demo;
+      document.getElementById("archive-section").hidden = role !== "owner";
+      if (role !== "owner") {
+        document.getElementById("archive-list").textContent = ""; // don't leave records on screen after sign-out
+        document.getElementById("archive-status").textContent = "";
+      }
       loadFooters(role);
     }
 
@@ -470,6 +489,9 @@
       return { title: site, note };
     }
 
+    // The article link of the drafts on screen, sent with each schedule request for the archive.
+    let currentArticleUrl = "";
+
     // Asks Claude for the three drafts and shows them in editable boxes.
     async function writeDrafts(article) {
       const shown = pageTitle(article.title, article.url);
@@ -496,6 +518,7 @@
         return;
       }
 
+      currentArticleUrl = article.url || "";
       document.getElementById("article-title").textContent = `From: ${shown.title}`;
       const titleNote = document.getElementById("article-title-note");
       titleNote.textContent = shown.note; // textContent: Blotato's title is shown as plain text
@@ -715,7 +738,7 @@
         }
         // Snapshot: exactly what will be sent, whatever happens on the page afterwards.
         lock(true);
-        showConfirm({ text, account, when });
+        showConfirm({ text, account, when, articleUrl: currentArticleUrl });
       });
 
       function showConfirm(snapshot) {
@@ -789,6 +812,7 @@
                 accountId: String(snapshot.account.id),
                 text: snapshot.text,
                 scheduledTime: snapshot.when.toISOString(),
+                articleUrl: snapshot.articleUrl, // for the archive only
               }),
             });
             data = await readJson(res);
@@ -828,7 +852,13 @@
         const hint = document.createElement("p");
         hint.className = "muted";
         hint.textContent = "Added to Your posts below. To change or cancel it, use my.blotato.com. Editing the draft here won't change the scheduled post.";
-        box.append(done, id, hint);
+        // Archive result: the post is scheduled either way.
+        const archiveLine = document.createElement("p");
+        archiveLine.className = data.archived ? "muted" : "warning";
+        archiveLine.textContent = data.archived
+          ? "Saved to the archive."
+          : `⚠ ${data.archiveWarning || "The post was scheduled, but the server didn't confirm it was saved to the archive. Note its details for your records."}`;
+        box.append(done, id, archiveLine, hint);
         textarea.readOnly = true;
 
         // Save it to the "Your posts" board (kept across page refreshes), with no
@@ -1358,6 +1388,296 @@
 
       doctorResult.appendChild(card);
     }
+
+    // ---------- Archive (milestone 6.4) ----------
+    // Owner only. Read-only: the page can list and download records, never change them.
+
+    const archiveLoad = document.getElementById("archive-load");
+    const archiveCsv = document.getElementById("archive-csv");
+    const archiveStatus = document.getElementById("archive-status");
+    const archiveList = document.getElementById("archive-list");
+
+    // Only real web links become clickable; anything else is shown as text.
+    function safeLink(url, label) {
+      if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return null;
+      const a = document.createElement("a");
+      a.href = url;
+      a.textContent = label;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      return a;
+    }
+
+    function archiveLine(parent, text, className = "") {
+      const p = document.createElement("p");
+      if (className) p.className = className;
+      p.textContent = text;
+      parent.appendChild(p);
+      return p;
+    }
+
+    function renderArchive(records) {
+      archiveList.textContent = "";
+      for (const r of records) {
+        const li = document.createElement("li");
+        li.className = "post";
+
+        const head = document.createElement("p");
+        const status = r.latestStatus?.status;
+        const badge = document.createElement("span");
+        badge.className = `badge ${BADGES[status] ? status : ""}`;
+        badge.textContent = BADGES[status] ?? "Not checked yet";
+        const title = document.createElement("strong");
+        title.textContent = ` ${r.platform ?? "?"} · ${r.accountName ?? "unknown account"}`;
+        head.append(badge, title);
+        li.appendChild(head);
+
+        archiveLine(li, r.scheduledTime ? `Post time: ${formatLocal(new Date(r.scheduledTime))}` : "Post time: not recorded");
+        const text = archiveLine(li, r.text ?? "", "raw"); // exact text, line breaks kept
+        text.setAttribute("aria-label", "Post text as scheduled");
+
+        const links = document.createElement("p");
+        const article = safeLink(r.articleUrl, "Article ↗");
+        const live = safeLink(r.latestStatus?.publicUrl, "View live post ↗");
+        if (article) links.append(article);
+        if (article && live) links.append(" · ");
+        if (live) links.append(live);
+        if (article || live) li.appendChild(links);
+        if (r.latestStatus?.errorMessage) archiveLine(li, `Error: ${r.latestStatus.errorMessage}`, "error");
+
+        const scheduledAt = r.scheduledAt ? formatLocal(new Date(r.scheduledAt)) : "not available";
+        archiveLine(li, `${r.source ?? "unknown source"} · scheduled ${scheduledAt} · archived ${formatLocal(new Date(r.archivedAt))}`, "muted");
+        archiveLine(li, r.postSubmissionId ? `postSubmissionId: ${r.postSubmissionId}` : `Blotato post ${r.blotatoId ?? "?"}`, "muted");
+        addNotesArea(li, r);
+        archiveList.appendChild(li);
+      }
+    }
+
+    // Notes: shown oldest first. Adding one takes two clicks, because notes are permanent.
+    function addNotesArea(li, record) {
+      const notesList = document.createElement("ul");
+      const showNote = (n) => {
+        const item = document.createElement("li");
+        item.textContent = `${formatLocal(new Date(n.addedAt))}: ${n.text}`;
+        notesList.appendChild(item);
+      };
+      const heading = archiveLine(li, (record.notes ?? []).length ? "Notes:" : "No notes yet.", "muted");
+      (record.notes ?? []).forEach(showNote);
+      li.appendChild(notesList);
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 500;
+      input.placeholder = "e.g. Footer added on LinkedIn, 11/17";
+      input.setAttribute("aria-label", "New note for this record");
+      input.style.fontFamily = "inherit";
+      const add = document.createElement("button");
+      add.type = "button";
+      add.textContent = "Add a note…";
+      const confirmBox = document.createElement("div");
+      const message = document.createElement("div");
+      message.setAttribute("aria-live", "polite");
+      li.append(input, add, confirmBox, message);
+
+      add.addEventListener("click", () => {
+        message.textContent = "";
+        const text = input.value.trim();
+        if (!text) return showMessage(message, "Type a note first.", "error");
+        input.readOnly = true;
+        add.hidden = true;
+        confirmBox.textContent = "";
+        archiveLine(confirmBox, `Save this note permanently? Notes can't be edited or deleted: "${text}"`, "warning");
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "Save permanently";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.textContent = "Cancel";
+        const reset = () => {
+          confirmBox.textContent = "";
+          input.readOnly = false;
+          add.hidden = false;
+        };
+        cancel.addEventListener("click", reset);
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          cancel.disabled = true;
+          try {
+            const res = await api("/.netlify/functions/archive-note", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: record.id, note: text }),
+            });
+            const data = await readJson(res);
+            reset();
+            if (!res.ok) return showMessage(message, data.error, "error");
+            showNote(data.note);
+            heading.textContent = "Notes:";
+            input.value = "";
+            showMessage(message, "Note saved.", "muted");
+          } catch {
+            reset();
+            showMessage(message, "Couldn't reach the RepostRx server. Load the archive again to check whether the note was saved.", "error");
+          }
+        });
+        confirmBox.append(save, cancel);
+      });
+    }
+
+    archiveLoad.addEventListener("click", async () => {
+      archiveLoad.disabled = true;
+      showMessage(archiveStatus, "Loading the archive…", "muted");
+      try {
+        const res = await api("/.netlify/functions/archive");
+        const data = await readJson(res);
+        if (!res.ok) return showMessage(archiveStatus, data.error, "error");
+        const records = Array.isArray(data.records) ? data.records : [];
+        renderArchive(records);
+        showMessage(archiveStatus, records.length
+          ? `${records.length} record${records.length === 1 ? "" : "s"}, newest first.`
+          : "No records yet. Posts are added here when you schedule them with RepostRx.", "muted");
+      } catch {
+        showMessage(archiveStatus, "Couldn't reach the RepostRx server. Check your connection and try again.", "error");
+      } finally {
+        archiveLoad.disabled = false;
+      }
+    });
+
+    // The CSV comes through api(), so it carries the password; it's never a public link.
+    archiveCsv.addEventListener("click", async () => {
+      archiveCsv.disabled = true;
+      showMessage(archiveStatus, "Preparing the CSV…", "muted");
+      try {
+        const res = await api("/.netlify/functions/archive?format=csv");
+        if (!res.ok) {
+          const data = await readJson(res);
+          return showMessage(archiveStatus, data.error, "error");
+        }
+        const file = await res.blob();
+        const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1]
+          ?? "repostrx-archive.csv";
+        const url = URL.createObjectURL(file);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showMessage(archiveStatus, `Downloaded ${name}. Keep a copy somewhere other than RepostRx.`, "muted");
+      } catch {
+        showMessage(archiveStatus, "Couldn't download the CSV. Check your connection and try again.", "error");
+      } finally {
+        archiveCsv.disabled = false;
+      }
+    });
+
+    // Backfill: preview first (nothing saved), then "Add permanently". Read-only towards Blotato.
+    const archiveImport = document.getElementById("archive-import");
+    const importPanel = document.getElementById("archive-import-panel");
+    const ACTION_LABELS = {
+      add: "Will add",
+      matched: "Already archived (same post)",
+      already: "Already archived",
+      skipped: "Skipped",
+      failed: "Couldn't save",
+    };
+
+    // The board only supplies postSubmissionIds; sample cards are left out.
+    function boardForImport() {
+      return posts
+        .filter((p) => p.platformName !== "SAMPLE" && p.scheduledTime)
+        .map((p) => ({
+          id: p.id,
+          scheduledTime: p.scheduledTime,
+          platform: SCHEDULE_PLATFORMS.find((s) => s.name === p.platformName)?.platform ?? "",
+        }));
+    }
+
+    async function runImport(dryRun) {
+      const res = await api("/.netlify/functions/archive-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun, board: boardForImport() }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || `Unexpected reply (status ${res.status}).`);
+      return data;
+    }
+
+    function showImportRows(data) {
+      const list = document.createElement("ul");
+      for (const r of data.rows) {
+        const li = document.createElement("li");
+        const when = r.postTime ? formatLocal(new Date(r.postTime)) : "no time";
+        const label = data.dryRun ? ACTION_LABELS[r.action] : (r.action === "add" ? "Added" : ACTION_LABELS[r.action]);
+        const idPart = r.action === "add" ? ` · ID from ${r.idFrom}` : "";
+        const why = r.reason ? ` (${r.reason})` : "";
+        li.textContent = `${label}${why}: ${r.platform ?? "?"} · ${when} · ${r.state ?? "?"} · Blotato post ${r.blotatoId ?? "?"}${idPart}${r.note ? ` · ${r.note}` : ""}: "${r.snippet}…"`;
+        list.appendChild(li);
+      }
+      return list;
+    }
+
+    archiveImport.addEventListener("click", async () => {
+      archiveImport.disabled = true;
+      importPanel.textContent = "";
+      showMessage(archiveStatus, "Reading Blotato's post list (read-only)… Nothing is saved yet.", "muted");
+      try {
+        const preview = await runImport(true);
+        archiveStatus.textContent = "";
+        importPanel.className = "confirm";
+        const c = preview.counts;
+        archiveLine(importPanel, `Preview (last and next ${preview.windowDays} days): ${c.add} to add, ${c.matched + c.already} already archived, ${c.skipped} skipped. Nothing has been saved.`);
+        if (preview.truncated) archiveLine(importPanel, "Blotato listed more than 1,000 posts, so only the first 1,000 are shown.", "warning");
+        if (preview.rows.length) importPanel.appendChild(showImportRows(preview));
+        else archiveLine(importPanel, "Blotato listed no posts in this window.", "muted");
+
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.textContent = "Cancel";
+        cancel.addEventListener("click", () => {
+          importPanel.textContent = "";
+          importPanel.className = "";
+          archiveImport.disabled = false;
+        });
+        const archivedCount = c.matched + c.already;
+        if (c.add === 0 && archivedCount === 0) {
+          cancel.textContent = "Close";
+          importPanel.append(cancel);
+          return;
+        }
+        if (c.add > 0) {
+          archiveLine(importPanel, "Records are permanent: they can't be edited or deleted. Check the list above before adding.", "warning");
+        }
+        const confirm = document.createElement("button");
+        confirm.type = "button";
+        // Nothing new: the only thing to save is the latest status of what's already archived.
+        confirm.textContent = c.add > 0 ? `Add ${c.add} permanently` : "Save their latest statuses";
+        confirm.addEventListener("click", async () => {
+          confirm.disabled = true;
+          cancel.disabled = true;
+          showMessage(archiveStatus, "Saving…", "muted");
+          try {
+            const done = await runImport(false);
+            importPanel.textContent = "";
+            importPanel.className = "";
+            const d = done.counts;
+            showMessage(archiveStatus, `Added ${d.add}, already archived ${d.matched + d.already}, skipped ${d.skipped}${d.failed ? `, couldn't save ${d.failed}` : ""}. Click Load archive to see them.`, d.failed ? "warning" : "muted");
+          } catch (err) {
+            showMessage(archiveStatus, err.message || "Couldn't reach the RepostRx server. Load the archive to see what was saved.", "error");
+          } finally {
+            archiveImport.disabled = false;
+          }
+        });
+        importPanel.append(confirm, cancel);
+      } catch (err) {
+        importPanel.textContent = "";
+        importPanel.className = "";
+        showMessage(archiveStatus, err.message || "Couldn't reach the RepostRx server. Try again.", "error");
+        archiveImport.disabled = false;
+      }
+    });
 
     // ---------- Connected accounts (milestone 1) ----------
 

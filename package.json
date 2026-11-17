@@ -1,0 +1,11 @@
+{
+  "name": "repostrx",
+  "private": true,
+  "description": "Turns an article into scheduled social posts with Blotato, and explains failed posts.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@netlify/blobs": "11.1.9"
+  }
+}
